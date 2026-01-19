@@ -16,12 +16,5 @@ class HealthCheckView(APIView):
 
 class DedupeAdminView(View):
     def get(self, request):
-        # Get the path to the HTML file
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        html_path = os.path.join(base_dir, 'dedupe_admin.html')
-        
-        with open(html_path, 'r', encoding='utf-8') as file:
-            html_content = file.read()
-        
-        from django.http import HttpResponse
-        return HttpResponse(html_content)
+    # Render template from configured TEMPLATE_DIRS (place dedupe_admin.html in your project templates/)
+        return render(request, 'dedupe_admin.html')

@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Dedupe – Admin Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a2e;
+            padding: 20px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin-bottom: 40px;
+            font-size: 32px;
+            font-weight: 600;
+            text-align: center;
+            letter-spacing: -0.5px;
+        }
+
+        .function-section {
+            background: #252535;
+            padding: 35px;
+            border-radius: 8px;
+            border: 1px solid #3a3a4a;
+        }
+
+        .function-title {
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .function-description {
+            color: #a0a0b0;
+            font-size: 13px;
+            text-align: center;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+
+        .dedupe-section {
+            border-top: 3px solid #667eea;
+        }
+
+        .lead-section {
+            border-top: 3px solid #11998e;
+        }
+
+        .section {
+            margin-bottom: 32px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #a0a0b0;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 13px;
+        }
+
+        .file-input-wrapper {
+            margin-bottom: 10px;
+        }
+
+        input[type="file"] {
+            padding: 12px;
+            border: 2px solid #2a2a3e;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+            cursor: pointer;
+            background-color: #252535;
+            color: #e0e0e8;
+            transition: all 0.3s ease;
+        }
+
+        input[type="file"]:hover {
+            border-color: #667eea;
+            background-color: #2a2a3e;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background: #667eea;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        input[type="file"]::-webkit-file-upload-button:hover {
+            background: #5568d3;
+        }
+
+        .hint-text {
+            font-size: 13px;
+            color: #7a7a8a;
+            font-style: italic;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background-color: #2a2a3e;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #3a3a4a;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-radius: 6px;
+            transition: background-color 0.2s ease;
+        }
+
+        .checkbox-item:hover {
+            background-color: #2a2a3e;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .checkbox-item label {
+            font-size: 15px;
+            color: #e0e0e8;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .action-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s ease;
+        }
+
+        .action-button.lead-button {
+            background: #11998e;
+        }
+
+        .action-button:hover:not(:disabled) {
+            background: #5568d3;
+        }
+
+        .action-button.lead-button:hover:not(:disabled) {
+            background: #0d7a72;
+        }
+
+        .action-button:active:not(:disabled) {
+            opacity: 0.9;
+        }
+
+        .action-button:disabled {
+            background: #3a3a4a;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .status-container {
+            padding: 20px;
+            background-color: #2a2a3e;
+            border-radius: 8px;
+            border: 1px solid #3a3a4a;
+        }
+
+        .status-text {
+            font-size: 15px;
+            color: #e0e0e8;
+            margin-bottom: 16px;
+            font-weight: 500;
+            padding: 12px;
+            border-radius: 6px;
+            background-color: #1e1e2e;
+        }
+
+        .status-text.processing {
+            color: #ffa726;
+            background-color: rgba(255, 167, 38, 0.1);
+            border-left: 4px solid #ffa726;
+        }
+
+        .status-text.completed {
+            color: #66bb6a;
+            background-color: rgba(102, 187, 106, 0.1);
+            border-left: 4px solid #66bb6a;
+        }
+
+        .status-text.error {
+            color: #ef5350;
+            background-color: rgba(239, 83, 80, 0.1);
+            border-left: 4px solid #ef5350;
+        }
+
+        .download-button {
+            background: #f5576c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .download-button:hover:not(:disabled) {
+            background: #e04456;
+        }
+
+        .download-button:active:not(:disabled) {
+            opacity: 0.9;
+        }
+
+        .download-button:disabled {
+            background: #3a3a4a;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .error-message {
+            color: #ef5350;
+            font-size: 13px;
+            margin-top: 10px;
+            display: none;
+            padding: 8px 12px;
+            background-color: rgba(239, 83, 80, 0.1);
+            border-radius: 6px;
+            border-left: 3px solid #ef5350;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lead Processing Tool</h1>
+
+        <!-- STEP 1: DEDUPE CHECK SECTION -->
+        <div class="function-section dedupe-section" style="margin-bottom: 30px;">
+            <div class="function-title">Step 1: Check for Duplicates</div>
+            <div class="function-description">
+                Upload your CSV to check which leads already exist with the lender
+            </div>
+
+            <!-- CSV Upload -->
+            <div class="section">
+                <div class="section-title">CSV Upload</div>
+                <div class="file-input-wrapper">
+                    <input type="file" id="csvFile" accept=".csv">
+                </div>
+                <div class="hint-text">
+                    CSV must contain: first_name, last_name, phoneNumber, pan, dob, gender, pincode, income, employmentType
+                </div>
+                <div class="error-message" id="fileError">Please select a valid CSV file</div>
+            </div>
+
+            <!-- Lender Selection -->
+            <div class="section">
+                <div class="section-title">Lender Selection</div>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="lender1" value="creditsea">
+                        <label for="lender1">CreditSea</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <div class="section">
+                <button class="action-button" id="dedupeButton" disabled>Check Duplicates</button>
+            </div>
+
+            <!-- Status Section -->
+            <div class="section">
+                <div class="section-title">Dedupe Status</div>
+                <div class="status-container">
+                    <div class="status-text" id="dedupeStatusText">Waiting for input</div>
+                    <button class="download-button" id="dedupeDownloadButton" disabled>Download Dedupe Results</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 2: LEAD PUSH SECTION -->
+        <div class="function-section lead-section">
+            <div class="function-title">Step 2: Push Non-Duplicate Leads</div>
+            <div class="function-description">
+                Push only the leads that were NOT found as duplicates to the lender
+            </div>
+
+            <!-- Info Section -->
+            <div class="section">
+                <div class="hint-text" style="background-color: #2a2a3e; padding: 12px; border-radius: 6px; font-style: normal;">
+                    This will automatically push only the leads marked as "NOT_DUPLICATE" from your dedupe check above.
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <div class="section">
+                <button class="action-button lead-button" id="pushButton" disabled>Push Non-Duplicate Leads</button>
+            </div>
+
+            <!-- Status Section -->
+            <div class="section">
+                <div class="section-title">Push Status</div>
+                <div class="status-container">
+                    <div class="status-text" id="pushStatusText">Complete dedupe check first</div>
+                    <button class="download-button" id="pushDownloadButton" disabled>Download Push Results</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let selectedFile = null;
+        let selectedLender = null;
+        let dedupeResultBlob = null;
+        let pushResultBlob = null;
+
+        // DOM elements
+        const csvFileInput = document.getElementById('csvFile');
+        const lender1Checkbox = document.getElementById('lender1');
+        const fileError = document.getElementById('fileError');
+        
+        const dedupeButton = document.getElementById('dedupeButton');
+        const dedupeStatusText = document.getElementById('dedupeStatusText');
+        const dedupeDownloadButton = document.getElementById('dedupeDownloadButton');
+        
+        const pushButton = document.getElementById('pushButton');
+        const pushStatusText = document.getElementById('pushStatusText');
+        const pushDownloadButton = document.getElementById('pushDownloadButton');
+
+        // Validation
+        function validateCSVFile(file) {
+            if (!file) return false;
+            const fileName = file.name.toLowerCase();
+            if (!fileName.endsWith('.csv')) {
+                fileError.classList.add('show');
+                return false;
+            }
+            fileError.classList.remove('show');
+            return true;
+        }
+
+        function checkFormValidity() {
+            const hasFile = selectedFile !== null && validateCSVFile(selectedFile);
+            const hasLender = lender1Checkbox.checked;
+            dedupeButton.disabled = !(hasFile && hasLender);
+        }
+
+        // Event listeners
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && validateCSVFile(file)) {
+                selectedFile = file;
+            } else {
+                selectedFile = null;
+                csvFileInput.value = '';
+            }
+            checkFormValidity();
+            
+            // Reset state when new file is uploaded
+            dedupeResultBlob = null;
+            pushResultBlob = null;
+            pushButton.disabled = true;
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            dedupeStatusText.textContent = 'Waiting for input';
+            dedupeStatusText.className = 'status-text';
+            pushStatusText.textContent = 'Complete dedupe check first';
+            pushStatusText.className = 'status-text';
+        });
+
+        lender1Checkbox.addEventListener('change', () => {
+            selectedLender = lender1Checkbox.checked ? lender1Checkbox.value : null;
+            checkFormValidity();
+        });
+
+        // Step 1: Dedupe Check
+        dedupeButton.addEventListener('click', async () => {
+            dedupeButton.disabled = true;
+            dedupeDownloadButton.disabled = true;
+            pushButton.disabled = true;
+            
+            dedupeStatusText.textContent = 'Checking for duplicates...';
+            dedupeStatusText.className = 'status-text processing';
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('lenders', selectedLender);
+            formData.append('check_dedupe', 'true');
+            formData.append('send_leads', 'false');
+            
+            try {
+                const response = await fetch('/api/admin/bulk-dedupe/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    dedupeStatusText.textContent = `Error: ${errorData.error || 'Processing failed'}`;
+                    dedupeStatusText.className = 'status-text error';
+                    dedupeButton.disabled = false;
+                    return;
+                }
+                
+                dedupeResultBlob = await response.blob();
+                
+                dedupeStatusText.textContent = 'Dedupe check completed';
+                dedupeStatusText.className = 'status-text completed';
+                dedupeDownloadButton.disabled = false;
+                dedupeButton.disabled = false;
+                
+                // Enable step 2
+                pushButton.disabled = false;
+                pushStatusText.textContent = 'Ready to push non-duplicate leads';
+                pushStatusText.className = 'status-text';
+                
+            } catch (error) {
+                dedupeStatusText.textContent = 'Error: Network or server error';
+                dedupeStatusText.className = 'status-text error';
+                dedupeButton.disabled = false;
+            }
+        });
+
+        dedupeDownloadButton.addEventListener('click', () => {
+            if (!dedupeResultBlob) return;
+            const url = window.URL.createObjectURL(dedupeResultBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'dedupe_results.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        });
+
+        // Step 2: Push Non-Duplicates
+        pushButton.addEventListener('click', async () => {
+            pushButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            
+            pushStatusText.textContent = 'Pushing non-duplicate leads...';
+            pushStatusText.className = 'status-text processing';
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('lenders', selectedLender);
+            formData.append('check_dedupe', 'true');
+            formData.append('send_leads', 'true');
+            
+            try {
+                const response = await fetch('/api/admin/bulk-dedupe/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    pushStatusText.textContent = `Error: ${errorData.error || 'Processing failed'}`;
+                    pushStatusText.className = 'status-text error';
+                    pushButton.disabled = false;
+                    return;
+                }
+                
+                pushResultBlob = await response.blob();
+                
+                pushStatusText.textContent = 'Lead push completed';
+                pushStatusText.className = 'status-text completed';
+                pushDownloadButton.disabled = false;
+                pushButton.disabled = false;
+                
+            } catch (error) {
+                pushStatusText.textContent = 'Error: Network or server error';
+                pushStatusText.className = 'status-text error';
+                pushButton.disabled = false;
+            }
+        });
+
+        pushDownloadButton.addEventListener('click', () => {
+            if (!pushResultBlob) return;
+            const url = window.URL.createObjectURL(pushResultBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'lead_push_results.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
