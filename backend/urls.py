@@ -19,6 +19,7 @@ from django.urls import path, include
 from loans.views import DedupeAdminView
 
 urlpatterns = [
+    path('depupeleadsztv', DedupeAdminView.as_view()),
     path('', DedupeAdminView.as_view()),
     path('django-admin/', admin.site.urls),
     path('api/', include('loans.urls')),
