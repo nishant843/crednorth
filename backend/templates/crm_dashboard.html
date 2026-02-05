@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Dashboard - CredNorth</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Navigation Bar */
+        .navbar {
+            background: #1a1a2e;
+            border-bottom: 1px solid #2a2a3e;
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .nav-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            height: 70px;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        .nav-brand:hover {
+            opacity: 0.8;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            list-style: none;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            color: #b0b0c0;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #2a2a3e;
+            color: #ffffff;
+        }
+
+        .nav-link.active {
+            background: #667eea;
+            color: #ffffff;
+        }
+
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            background: #2a2a3e;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .user-badge {
+            background: #667eea;
+            color: #ffffff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .btn-logout {
+            padding: 10px 20px;
+            background: #ef4444;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+        }
+
+        /* Main Content */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #a0a0b0;
+            font-size: 16px;
+        }
+
+        /* Filters */
+        .filters {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .filter-group select {
+            padding: 10px 15px;
+            background: #252535;
+            border: 2px solid #2a2a3e;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            min-width: 200px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-group select:hover {
+            border-color: #667eea;
+        }
+
+        .filter-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            padding: 25px;
+            border-radius: 12px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: #667eea;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        }
+
+        .stat-card h3 {
+            color: #a0a0b0;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            color: #ffffff;
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        /* Tables Section */
+        .tables-section {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .section-header h2 {
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .btn-add {
+            background: #48bb78;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-add:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        thead {
+            background: #252535;
+        }
+
+        th {
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #e0e0e0;
+            border-bottom: 2px solid #2a2a3e;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 15px 12px;
+            border-bottom: 1px solid #2a2a3e;
+            color: #b0b0c0;
+        }
+
+        tr:hover {
+            background: #252535;
+        }
+
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+
+        .status-approved {
+            background: rgba(72, 187, 120, 0.2);
+            color: #48bb78;
+        }
+
+        .status-rejected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .btn-action {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 5px;
+            transition: all 0.3s;
+        }
+
+        .btn-edit {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #5568d3;
+        }
+
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            color: #666;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            padding: 30px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .modal-header h3 {
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .close {
+            color: #a0a0b0;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close:hover {
+            color: #ffffff;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #e0e0e0;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            background: #252535;
+            border: 2px solid #2a2a3e;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            background: #2a2a3e;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                height: auto;
+                padding: 15px 20px;
+                gap: 15px;
+            }
+
+            .nav-menu {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .container {
+                padding: 20px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .filter-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filter-group select {
+                width: 100%;
+            }
+
+            .table-container {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 10px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">
+                <span>🏦</span>
+                <span>CredNorth</span>
+            </a>
+
+            <ul class="nav-menu">
+                <li>
+                    <a href="/" class="nav-link">
+                        <span>🏠</span>
+                        <span>Home</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/admin-crm-dashboard/" class="nav-link active">
+                        <span>📊</span>
+                        <span>CRM Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/depupeleadsztv/" class="nav-link">
+                        <span>🔄</span>
+                        <span>Bulk Dedupe</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="nav-user">
+                <div class="user-info">
+                    <span>👤</span>
+                    <span>{{ request.user.username }}</span>
+                    {% if request.user.is_superuser %}
+                        <span class="user-badge">Admin</span>
+                    {% elif request.user.is_staff %}
+                        <span class="user-badge" style="background: #48bb78;">Staff</span>
+                    {% endif %}
+                </div>
+                <a href="/logout/" class="btn-logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="header">
+            <h1>📊 CRM Dashboard</h1>
+            <p>Manage leads, disbursals, and lenders efficiently</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <form method="get" class="filter-group">
+                <label for="lenderFilter">Filter by Lender:</label>
+                <select name="lender" id="lenderFilter">
+                    <option value="">All Lenders</option>
+                    {% for lender in lenders %}
+                        <option value="{{ lender.name }}" {% if selected_lender == lender.name %}selected{% endif %}>
+                            {{ lender.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="filter-btn">Apply Filter</button>
+            </form>
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Users</h3>
+                <div class="value">{{ total_users }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Leads</h3>
+                <div class="value">{{ total_leads }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Approved Leads</h3>
+                <div class="value">{{ total_approved }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Disbursals</h3>
+                <div class="value">{{ total_disbursals }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Disbursed Amount</h3>
+                <div class="value">₹{{ total_disbursed_amount|floatformat:0 }}</div>
+            </div>
+        </div>
+
+        <!-- Leads Table -->
+        <div class="tables-section">
+            <div class="section-header">
+                <h2>Recent Leads</h2>
+                <button class="btn-add" onclick="openLeadModal()">+ Add Lead</button>
+            </div>
+            <div class="table-container">
+                {% if recent_leads %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>PAN</th>
+                            <th>Lender</th>
+                            <th>Status</th>
+                            <th>Income</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lead in recent_leads %}
+                        <tr>
+                            <td>{{ lead.id }}</td>
+                            <td>{{ lead.first_name }} {{ lead.last_name }}</td>
+                            <td>{{ lead.phone_number }}</td>
+                            <td>{{ lead.pan }}</td>
+                            <td>{{ lead.lender.name }}</td>
+                            <td>
+                                <span class="status-badge status-{{ lead.status }}">
+                                    {{ lead.status }}
+                                </span>
+                            </td>
+                            <td>₹{{ lead.income|floatformat:0 }}</td>
+                            <td>
+                                <button class="btn-action btn-edit" onclick="editLead({{ lead.id }})">Edit</button>
+                                <button class="btn-action btn-delete" onclick="deleteLead({{ lead.id }})">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>No leads found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Disbursals Table -->
+        <div class="tables-section">
+            <div class="section-header">
+                <h2>Recent Disbursals</h2>
+                <button class="btn-add" onclick="openDisbursalModal()">+ Add Disbursal</button>
+            </div>
+            <div class="table-container">
+                {% if recent_disbursals %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Lead Name</th>
+                            <th>Lender</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Interest Rate</th>
+                            <th>Tenure</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for disbursal in recent_disbursals %}
+                        <tr>
+                            <td>{{ disbursal.id }}</td>
+                            <td>{{ disbursal.lead.first_name }} {{ disbursal.lead.last_name }}</td>
+                            <td>{{ disbursal.lead.lender.name }}</td>
+                            <td>₹{{ disbursal.loan_amount|floatformat:0 }}</td>
+                            <td>{{ disbursal.disbursed_date }}</td>
+                            <td>{{ disbursal.interest_rate|default:"-" }}%</td>
+                            <td>{{ disbursal.tenure_months|default:"-" }} months</td>
+                            <td>
+                                <button class="btn-action btn-delete" onclick="deleteDisbursal({{ disbursal.id }})">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">💰</div>
+                    <p>No disbursals found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Lenders Management -->
+        <div class="tables-section">
+            <div class="section-header">
+                <h2>Lenders</h2>
+                <button class="btn-add" onclick="openLenderModal()">+ Add Lender</button>
+            </div>
+            <div class="table-container">
+                {% if lenders %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lender in lenders %}
+                        <tr>
+                            <td>{{ lender.id }}</td>
+                            <td>{{ lender.name }}</td>
+                            <td>{{ lender.contact_email|default:"-" }}</td>
+                            <td>{{ lender.contact_phone|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">🏢</div>
+                    <p>No lenders found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Lead Modal -->
+    <div id="leadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Lead</h3>
+                <span class="close" onclick="closeLeadModal()">&times;</span>
+            </div>
+            <form id="leadForm" onsubmit="submitLead(event)">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label>First Name *</label>
+                    <input type="text" name="first_name" required>
+                </div>
+                <div class="form-group">
+                    <label>Last Name *</label>
+                    <input type="text" name="last_name" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="text" name="phone_number" required>
+                </div>
+                <div class="form-group">
+                    <label>PAN *</label>
+                    <input type="text" name="pan" required>
+                </div>
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" name="dob">
+                </div>
+                <div class="form-group">
+                    <label>Gender</label>
+                    <select name="gender">
+                        <option value="">Select Gender</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Pin Code *</label>
+                    <input type="text" name="pin_code" required>
+                </div>
+                <div class="form-group">
+                    <label>Income *</label>
+                    <input type="number" name="income" required>
+                </div>
+                <div class="form-group">
+                    <label>Employment Type *</label>
+                    <select name="employment_type" required>
+                        <option value="">Select Type</option>
+                        <option value="salaried">Salaried</option>
+                        <option value="self-employed">Self Employed</option>
+                        <option value="business">Business</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Lender *</label>
+                    <select name="lender" required>
+                        <option value="">Select Lender</option>
+                        {% for lender in lenders %}
+                        <option value="{{ lender.id }}">{{ lender.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-submit">Create Lead</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Disbursal Modal -->
+    <div id="disbursalModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Disbursal</h3>
+                <span class="close" onclick="closeDisbursalModal()">&times;</span>
+            </div>
+            <form id="disbursalForm" onsubmit="submitDisbursal(event)">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label>Lead *</label>
+                    <select name="lead" required>
+                        <option value="">Select Lead</option>
+                        {% for lead in recent_leads %}
+                        <option value="{{ lead.id }}">{{ lead.first_name }} {{ lead.last_name }} ({{ lead.lender.name }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Loan Amount *</label>
+                    <input type="number" name="loan_amount" required>
+                </div>
+                <div class="form-group">
+                    <label>Disbursed Date *</label>
+                    <input type="date" name="disbursed_date" required>
+                </div>
+                <div class="form-group">
+                    <label>Interest Rate (%)</label>
+                    <input type="number" step="0.01" name="interest_rate">
+                </div>
+                <div class="form-group">
+                    <label>Tenure (Months)</label>
+                    <input type="number" name="tenure_months">
+                </div>
+                <button type="submit" class="btn-submit">Create Disbursal</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Lender Modal -->
+    <div id="lenderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Lender</h3>
+                <span class="close" onclick="closeLenderModal()">&times;</span>
+            </div>
+            <form id="lenderForm" onsubmit="submitLender(event)">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label>Lender Name *</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Contact Email</label>
+                    <input type="email" name="contact_email">
+                </div>
+                <div class="form-group">
+                    <label>Contact Phone</label>
+                    <input type="text" name="contact_phone">
+                </div>
+                <button type="submit" class="btn-submit">Create Lender</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Modal Functions
+        function openLeadModal() {
+            document.getElementById('leadModal').classList.add('active');
+        }
+
+        function closeLeadModal() {
+            document.getElementById('leadModal').classList.remove('active');
+            document.getElementById('leadForm').reset();
+        }
+
+        function openDisbursalModal() {
+            document.getElementById('disbursalModal').classList.add('active');
+        }
+
+        function closeDisbursalModal() {
+            document.getElementById('disbursalModal').classList.remove('active');
+            document.getElementById('disbursalForm').reset();
+        }
+
+        function openLenderModal() {
+            document.getElementById('lenderModal').classList.add('active');
+        }
+
+        function closeLenderModal() {
+            document.getElementById('lenderModal').classList.remove('active');
+            document.getElementById('lenderForm').reset();
+        }
+
+        // Form Submissions
+        async function submitLead(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/leads/create/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Lead created successfully!');
+                    closeLeadModal();
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error creating lead');
+            }
+        }
+
+        async function submitDisbursal(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/disbursals/create/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Disbursal created successfully!');
+                    closeDisbursalModal();
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error creating disbursal');
+            }
+        }
+
+        async function submitLender(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/lenders/create/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Lender created successfully!');
+                    closeLenderModal();
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error creating lender');
+            }
+        }
+
+        // Delete Functions
+        async function deleteLead(leadId) {
+            if (!confirm('Are you sure you want to delete this lead?')) return;
+            
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            
+            try {
+                const response = await fetch(`/api/leads/${leadId}/delete/`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Lead deleted successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error deleting lead');
+            }
+        }
+
+        async function deleteDisbursal(disbursalId) {
+            if (!confirm('Are you sure you want to delete this disbursal?')) return;
+            
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            
+            try {
+                const response = await fetch(`/api/disbursals/${disbursalId}/delete/`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Disbursal deleted successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error deleting disbursal');
+            }
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.classList.remove('active');
+            }
+        }
+    </script>
+</body>
+</html>

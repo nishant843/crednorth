@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bulk Dedupe – Admin Tool</title>
+    <title>Bulk Dedupe – CredNorth</title>
     <style>
         * {
             margin: 0;
@@ -12,32 +12,143 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #1a1a2e;
-            padding: 20px;
-            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
             min-height: 100vh;
+            line-height: 1.6;
         }
 
-        .container {
-            max-width: 800px;
+        /* Navigation Bar */
+        .navbar {
+            background: #1a1a2e;
+            border-bottom: 1px solid #2a2a3e;
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .nav-container {
+            max-width: 1400px;
             margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            height: 70px;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        .nav-brand:hover {
+            opacity: 0.8;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            list-style: none;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            color: #b0b0c0;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #2a2a3e;
+            color: #ffffff;
+        }
+
+        .nav-link.active {
+            background: #667eea;
+            color: #ffffff;
+        }
+
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            background: #2a2a3e;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .user-badge {
+            background: #667eea;
+            color: #ffffff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .btn-logout {
+            padding: 10px 20px;
+            background: #ef4444;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+        }
+
+        /* Main Content */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 30px;
         }
 
         h1 {
             color: #ffffff;
             margin-bottom: 40px;
             font-size: 32px;
-            font-weight: 600;
+            font-weight: 700;
             text-align: center;
-            letter-spacing: -0.5px;
         }
 
         .function-section {
-            background: #252535;
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
             padding: 35px;
-            border-radius: 8px;
-            border: 1px solid #3a3a4a;
+            border-radius: 16px;
+            margin-bottom: 30px;
         }
 
         .function-title {
@@ -50,32 +161,31 @@
 
         .function-description {
             color: #a0a0b0;
-            font-size: 13px;
+            font-size: 14px;
             text-align: center;
-            margin-bottom: 25px;
-            line-height: 1.5;
+            margin-bottom: 30px;
+            line-height: 1.6;
         }
 
         .dedupe-section {
-            border-top: 3px solid #667eea;
+            border-top: 4px solid #667eea;
         }
 
         .lead-section {
-            border-top: 3px solid #11998e;
+            border-top: 4px solid #48bb78;
         }
 
         .section {
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
 
         .section-title {
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             color: #a0a0b0;
             margin-bottom: 14px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            font-size: 13px;
         }
 
         .file-input-wrapper {
@@ -83,14 +193,14 @@
         }
 
         input[type="file"] {
-            padding: 12px;
+            padding: 14px;
             border: 2px solid #2a2a3e;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 14px;
             width: 100%;
             cursor: pointer;
             background-color: #252535;
-            color: #e0e0e8;
+            color: #e0e0e0;
             transition: all 0.3s ease;
         }
 
@@ -99,48 +209,38 @@
             background-color: #2a2a3e;
         }
 
-        input[type="file"]::-webkit-file-upload-button {
-            background: #667eea;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            color: white;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-
-        input[type="file"]::-webkit-file-upload-button:hover {
-            background: #5568d3;
-        }
-
         .hint-text {
-            font-size: 13px;
+            font-size: 12px;
             color: #7a7a8a;
             font-style: italic;
+            line-height: 1.5;
+            padding: 10px;
+            background: rgba(102, 126, 234, 0.05);
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
         }
 
         .checkbox-group {
             display: flex;
             flex-direction: column;
             gap: 12px;
-            background-color: #2a2a3e;
-            padding: 16px;
-            border-radius: 8px;
-            border: 1px solid #3a3a4a;
         }
 
         .checkbox-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 8px;
-            border-radius: 6px;
-            transition: background-color 0.2s ease;
+            gap: 12px;
+            padding: 14px 16px;
+            background: #252535;
+            border: 2px solid #2a2a3e;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
         }
 
         .checkbox-item:hover {
-            background-color: #2a2a3e;
+            border-color: #667eea;
+            background: #2a2a3e;
         }
 
         .checkbox-item input[type="checkbox"] {
@@ -152,100 +252,102 @@
 
         .checkbox-item label {
             font-size: 15px;
-            color: #e0e0e8;
+            color: #e0e0e0;
             cursor: pointer;
+            flex: 1;
             font-weight: 500;
         }
 
         .action-button {
-            background: #667eea;
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 24px;
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 600;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            width: 100%;
-            transition: all 0.2s ease;
-        }
-
-        .action-button.lead-button {
-            background: #11998e;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
         }
 
         .action-button:hover:not(:disabled) {
-            background: #5568d3;
-        }
-
-        .action-button.lead-button:hover:not(:disabled) {
-            background: #0d7a72;
+            transform: translateY(-2px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
         }
 
         .action-button:active:not(:disabled) {
-            opacity: 0.9;
+            transform: translateY(0);
         }
 
         .action-button:disabled {
             background: #3a3a4a;
             cursor: not-allowed;
             opacity: 0.5;
+            box-shadow: none;
+        }
+
+        .lead-button {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            box-shadow: 0 10px 30px rgba(72, 187, 120, 0.3);
+        }
+
+        .lead-button:hover:not(:disabled) {
+            box-shadow: 0 15px 40px rgba(72, 187, 120, 0.4);
         }
 
         .status-container {
+            background: #252535;
             padding: 20px;
-            background-color: #2a2a3e;
-            border-radius: 8px;
-            border: 1px solid #3a3a4a;
+            border-radius: 10px;
+            border: 1px solid #2a2a3e;
         }
 
         .status-text {
             font-size: 15px;
-            color: #e0e0e8;
+            color: #e0e0e0;
             margin-bottom: 16px;
             font-weight: 500;
-            padding: 12px;
-            border-radius: 6px;
-            background-color: #1e1e2e;
+            padding: 14px;
+            border-radius: 8px;
+            background-color: #2a2a3e;
         }
 
         .status-text.processing {
             color: #ffa726;
-            background-color: rgba(255, 167, 38, 0.1);
+            background-color: rgba(255, 167, 38, 0.15);
             border-left: 4px solid #ffa726;
         }
 
         .status-text.completed {
-            color: #66bb6a;
-            background-color: rgba(102, 187, 106, 0.1);
-            border-left: 4px solid #66bb6a;
+            color: #48bb78;
+            background-color: rgba(72, 187, 120, 0.15);
+            border-left: 4px solid #48bb78;
         }
 
         .status-text.error {
-            color: #ef5350;
-            background-color: rgba(239, 83, 80, 0.1);
-            border-left: 4px solid #ef5350;
+            color: #ef4444;
+            background-color: rgba(239, 68, 68, 0.15);
+            border-left: 4px solid #ef4444;
         }
 
         .download-button {
-            background: #f5576c;
+            background: #667eea;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 20px;
             font-size: 14px;
             font-weight: 600;
             border-radius: 8px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             width: 100%;
         }
 
         .download-button:hover:not(:disabled) {
-            background: #e04456;
-        }
-
-        .download-button:active:not(:disabled) {
-            opacity: 0.9;
+            background: #5568d3;
+            transform: translateY(-2px);
         }
 
         .download-button:disabled {
@@ -255,27 +357,80 @@
         }
 
         .error-message {
-            color: #ef5350;
+            color: #ef4444;
             font-size: 13px;
             margin-top: 10px;
             display: none;
-            padding: 8px 12px;
-            background-color: rgba(239, 83, 80, 0.1);
-            border-radius: 6px;
-            border-left: 3px solid #ef5350;
+            padding: 10px 14px;
+            background-color: rgba(239, 68, 68, 0.15);
+            border-radius: 8px;
+            border-left: 3px solid #ef4444;
         }
 
         .error-message.show {
             display: block;
         }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                height: auto;
+                padding: 15px 20px;
+                gap: 15px;
+            }
+
+            .nav-menu {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .container {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 26px;
+            }
+        }
     </style>
 </head>
 <body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">
+                <span>🏦</span>
+                <span>CredNorth</span>
+            </a>
+
+            <ul class="nav-menu">
+                <li>
+                    <a href="/" class="nav-link">
+                        <span>🏠</span>
+                        <span>Home</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/depupeleadsztv/" class="nav-link active">
+                        <span>🔄</span>
+                        <span>Bulk Dedupe</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="nav-user">
+                <a href="/logout/" class="btn-logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
     <div class="container">
-        <h1>Lead Processing Tool</h1>
+        <h1>🔄 Lead Processing Tool</h1>
 
         <!-- STEP 1: DEDUPE CHECK SECTION -->
-        <div class="function-section dedupe-section" style="margin-bottom: 30px;">
+        <div class="function-section dedupe-section">
             <div class="function-title">Step 1: Check for Duplicates</div>
             <div class="function-description">
                 Upload your CSV to check which leads already exist with the lender
@@ -328,7 +483,7 @@
 
             <!-- Info Section -->
             <div class="section">
-                <div class="hint-text" style="background-color: #2a2a3e; padding: 12px; border-radius: 6px; font-style: normal;">
+                <div class="hint-text" style="border-left-color: #48bb78;">
                     This will automatically push only the leads marked as "NOT_DUPLICATE" from your dedupe check above.
                 </div>
             </div>

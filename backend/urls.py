@@ -16,11 +16,15 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from loans.views import DedupeAdminView
+from loans.views import DedupeAdminView, LoginView, LogoutView, HomeView
+from loans.views_admin import CRMDashboardView
 
 urlpatterns = [
-    path('depupeleadsztv/', DedupeAdminView.as_view()),
-    path('', DedupeAdminView.as_view()),
+    path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
+    path('depupeleadsztv/', DedupeAdminView.as_view(), name='admin_home'),
+    path('admin-crm-dashboard/', CRMDashboardView.as_view(), name='crm_dashboard'),
+    path('', HomeView.as_view(), name='home'),
     path('django-admin/', admin.site.urls),
     path('api/', include('loans.urls')),
 ]
