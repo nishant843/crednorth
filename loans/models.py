@@ -28,8 +28,8 @@ class Lead(models.Model):
 
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
-    phone_number = models.CharField(max_length=20)
-    pan = models.CharField(max_length=10)
+    phone_number = models.CharField(max_length=20, db_index=True)
+    pan = models.CharField(max_length=10, db_index=True)
     dob = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=20, blank=True)
     pin_code = models.CharField(max_length=10)
@@ -45,6 +45,19 @@ class Lead(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['phone_number', 'pan']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['phone_number', 'lender'],
+                name='unique_phone_per_lender'
+            ),
+            models.UniqueConstraint(
+                fields=['pan', 'lender'],
+                name='unique_pan_per_lender'
+            ),
+        ]
 
 
 class LoanDisbursal(models.Model):

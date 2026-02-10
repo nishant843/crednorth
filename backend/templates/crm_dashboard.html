@@ -653,7 +653,10 @@
         <div class="tables-section">
             <div class="section-header">
                 <h2>Recent Leads</h2>
-                <button class="btn-add" onclick="openLeadModal()">+ Add Lead</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-add" onclick="openLeadModal()">+ Add Lead</button>
+                    <button class="btn-add" style="background: #f59e0b;" onclick="openBulkUploadModal()">📁 Bulk Upload</button>
+                </div>
             </div>
             <div class="table-container">
                 {% if recent_leads %}
@@ -782,6 +785,52 @@
                     <p>No lenders found</p>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Upload Modal -->
+    <div id="bulkUploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Bulk Upload Leads</h3>
+                <span class="close" onclick="closeBulkUploadModal()">&times;</span>
+            </div>
+            <form id="bulkUploadForm" onsubmit="validateCSV(event)">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label>Select Lender *</label>
+                    <select name="lender" id="bulkLender" required>
+                        <option value="">Select Lender</option>
+                        {% for lender in lenders %}
+                        <option value="{{ lender.id }}">{{ lender.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Upload CSV File *</label>
+                    <input type="file" name="file" id="csvFile" accept=".csv" required>
+                    <small style="color: #a0a0b0; display: block; margin-top: 5px;">
+                        Expected columns: first_name, last_name, phoneNumber, pan, dob, gender, pinCode, income, employmentType
+                    </small>
+                </div>
+                <div id="uploadProgress" style="display: none; padding: 10px; background: #252535; border-radius: 8px; margin-top: 10px;">
+                    <div style="color: #667eea; font-weight: 600;">Validating CSV...</div>
+                </div>
+                <button type="submit" class="btn-submit">Validate CSV</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Preview and Confirm Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h3>Preview and Confirm Upload</h3>
+                <span class="close" onclick="closePreviewModal()">&times;</span>
+            </div>
+            <div id="previewContent">
+                <!-- Preview will be populated here -->
             </div>
         </div>
     </div>
@@ -1078,6 +1127,145 @@
                 }
             } catch (error) {
                 alert('Error deleting disbursal');
+            }
+        }
+
+        // Bulk Upload Functions
+        function openBulkUploadModal() {
+            document.getElementById('bulkUploadModal').classList.add('active');
+        }
+
+        function closeBulkUploadModal() {
+            document.getElementById('bulkUploadModal').classList.remove('active');
+            document.getElementById('bulkUploadForm').reset();
+            document.getElementById('uploadProgress').style.display = 'none';
+        }
+
+        function closePreviewModal() {
+            document.getElementById('previewModal').classList.remove('active');
+            document.getElementById('previewContent').innerHTML = '';
+        }
+
+        async function validateCSV(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            const progressDiv = document.getElementById('uploadProgress');
+            progressDiv.style.display = 'block';
+            progressDiv.innerHTML = '<div style="color: #667eea; font-weight: 600;">Validating CSV...</div>';
+            
+            try {
+                const response = await fetch('/api/leads/validate-csv/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                progressDiv.style.display = 'none';
+                
+                if (data.success) {
+                    showPreview(data);
+                    closeBulkUploadModal();
+                } else {
+                    // Show detailed error message
+                    let errorMsg = 'CSV Validation Error:\n\n';
+                    errorMsg += data.error || 'Unknown error';
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        errorMsg += '\n\nDetails:\n';
+                        errorMsg += data.errors.slice(0, 10).join('\n');
+                        if (data.errors.length > 10) {
+                            errorMsg += `\n... and ${data.errors.length - 10} more errors`;
+                        }
+                    }
+                    
+                    alert(errorMsg);
+                }
+            } catch (error) {
+                progressDiv.style.display = 'none';
+                console.error('Validation error:', error);
+                alert('Error validating CSV. Please check the console for details.\n\nError: ' + error.message);
+            }
+        }
+
+        function showPreview(data) {
+            const previewContent = document.getElementById('previewContent');
+            
+            let html = '';
+            
+            if (data.errors && data.errors.length > 0) {
+                html += '<div style="background: #7f1d1d; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
+                html += '<h4 style="margin-bottom: 10px; color: #fca5a5;">⚠️ Validation Warnings:</h4>';
+                html += '<ul style="padding-left: 20px; color: #fca5a5;">';
+                data.errors.forEach(error => {
+                    html += `<li>${error}</li>`;
+                });
+                html += '</ul></div>';
+            }
+            
+            html += `<div style="margin-bottom: 20px;">
+                <p style="color: #a0a0b0;">Found <strong style="color: #48bb78;">${data.total_rows}</strong> valid rows in the CSV.</p>
+                <p style="color: #a0a0b0;">Lender: <strong style="color: #667eea;">${data.lender_name}</strong></p>
+            </div>`;
+            
+            html += '<div style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">';
+            html += '<table style="width: 100%; border-collapse: collapse;">';
+            html += '<thead><tr style="background: #252535;">';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">First Name</th>';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Last Name</th>';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Phone</th>';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">PAN</th>';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Income</th>';
+            html += '</tr></thead><tbody>';
+            
+            data.preview_rows.forEach(row => {
+                html += '<tr>';
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.first_name}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.last_name}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.phone_number}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.pan}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">₹${row.income}</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            
+            html += '<div style="display: flex; gap: 10px;">';
+            html += `<button class="btn-submit" onclick="confirmUpload('${data.session_id}')">✓ Confirm and Upload</button>`;
+            html += '<button class="btn-submit" style="background: #6b7280;" onclick="closePreviewModal()">Cancel</button>';
+            html += '</div>';
+            
+            previewContent.innerHTML = html;
+            document.getElementById('previewModal').classList.add('active');
+        }
+
+        async function confirmUpload(sessionId) {
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            formData.append('session_id', sessionId);
+            
+            try {
+                const response = await fetch('/api/leads/bulk-upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let message = `Successfully uploaded ${data.created_count} leads!`;
+                    if (data.message) {
+                        message = data.message;
+                    }
+                    alert(message);
+                    closePreviewModal();
+                    location.reload();
+                } else {
+                    alert('Error uploading leads: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error uploading leads');
             }
         }
 

@@ -28,3 +28,9 @@ urlpatterns = [
     path('django-admin/', admin.site.urls),
     path('api/', include('loans.urls')),
 ]
+
+# Custom error handlers
+handler404 = 'loans.views.custom_404'
+handler500 = 'loans.views.custom_500'
+handler403 = 'loans.views.custom_403'
+handler400 = 'loans.views.custom_400'
