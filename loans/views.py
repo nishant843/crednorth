@@ -50,14 +50,14 @@ class LoginView(View):
         
         if user is not None:
             login(request, user)
-            messages.success(request, f'Welcome back, {user.username}!')
+            messages.success(request, f'Welcome back, {user.get_full_name()}!')
             # Redirect to default route or to the next URL
             if next_url and next_url != '/login/' and next_url != 'login':
                 return redirect(next_url)
             else:
                 return redirect('/')
         else:
-            messages.error(request, 'Invalid username or password.')
+            messages.error(request, 'Invalid phone number or password.')
             return render(request, 'login.html')
 
 

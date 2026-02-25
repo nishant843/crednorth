@@ -222,7 +222,7 @@
         {% if form.errors %}
             <div class="error-message">
                 <span>⚠️</span>
-                <span>Invalid username or password. Please try again.</span>
+                <span>Invalid phone number or password. Please try again.</span>
             </div>
         {% endif %}
 
@@ -230,14 +230,17 @@
             {% csrf_token %}
             
             <div class="form-group">
-                <label for="username">Username</label>
+                <label for="username">Phone Number</label>
                 <input 
                     type="text" 
                     id="username" 
                     name="username" 
-                    placeholder="Enter your username"
+                    placeholder="Enter your 10-digit phone number"
                     required
                     autofocus
+                    maxlength="10"
+                    pattern="[0-9]{10}"
+                    title="Please enter a valid 10-digit phone number"
                 >
             </div>
 
