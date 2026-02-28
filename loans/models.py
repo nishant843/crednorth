@@ -321,9 +321,10 @@ def create_user_from_lead(sender, instance, created, **kwargs):
                 data_attribution='Direct Lead Entry'
             )
     except User.DoesNotExist:
-        # Create new user from lead
-        user = User.objects.create(
+        # Create new user from lead (use create_user to handle password properly)
+        user = User.objects.create_user(
             phone_number=instance.phone_number,
+            password=None,  # Will set unusable password
             first_name=instance.first_name,
             last_name=instance.last_name,
             email=instance.email,

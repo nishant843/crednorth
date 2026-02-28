@@ -10,4 +10,7 @@ def ensure_user_meta(sender, instance, created, **kwargs):
     Ensures every user has exactly one UserMeta.
     Safe against duplicate inserts.
     """
-    UserMeta.objects.get_or_create(user=instance)
+    if created:
+        # Only create UserMeta for newly created users
+        if not UserMeta.objects.filter(user=instance).exists():
+            UserMeta.objects.create(user=instance)
