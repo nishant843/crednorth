@@ -3,6 +3,7 @@ import tempfile
 import csv
 import uuid
 import io
+import time
 from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,6 +13,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Sum, Count, Q
+from django.db import transaction
 from django.core.cache import cache
 from django.contrib import messages
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
@@ -757,46 +759,71 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
         try:
             rows = cached_data['rows']
             
-            # Double-check for duplicates before insertion (in case new leads were added)
-            existing_phones = set(User.objects.values_list('phone_number', flat=True))
-            existing_pans = set(User.objects.values_list('pan_number', flat=True))
-            
-            # Bulk create leads (skip duplicates)
-            users_to_create = []
+            # Use transaction with retry logic for database locked errors
+            max_retries = 5
+            retry_delay = 0.5  # seconds
+            created_users = []
             skipped_count = 0
             
-            for row in rows:
-                # Skip if duplicate found
-                if row['phone_number'] in existing_phones or row['pan_number'] in existing_pans:
-                    skipped_count += 1
-                    continue
-                
-                users_to_create.append(User(
-                    first_name=row['first_name'],
-                    last_name=row['last_name'],
-                    phone_number=row['phone_number'],
-                    pan_number=row['pan_number'],
-                    date_of_birth=row['date_of_birth'],
-                    gender=row['gender'],
-                    email=row['email'],
-                    city=row['city'],
-                    state=row['state'],
-                    pin_code=row['pin_code'],
-                    monthly_income=row['monthly_income'],
-                    profession=row['profession'],
-                    bureau_score=row['bureau_score'],
-                    status='pending'
-                ))
-                
-                # Add to existing sets to prevent duplicates within this batch
-                existing_phones.add(row['phone_number'])
-                existing_pans.add(row['pan_number'])
-            
-            # Create all leads at once
-            if users_to_create:
-                created_users = User.objects.bulk_create(users_to_create)
-            else:
-                created_users = []
+            for attempt in range(max_retries):
+                try:
+                    with transaction.atomic():
+                        # Double-check for duplicates before insertion (in case new leads were added)
+                        existing_phones = set(User.objects.values_list('phone_number', flat=True))
+                        existing_pans = set(User.objects.values_list('pan_number', flat=True))
+                        
+                        # Bulk create leads (skip duplicates)
+                        users_to_create = []
+                        skipped_count = 0
+                        
+                        for row in rows:
+                            # Skip if duplicate found
+                            if row['phone_number'] in existing_phones or row['pan_number'] in existing_pans:
+                                skipped_count += 1
+                                continue
+                            
+                            users_to_create.append(User(
+                                first_name=row['first_name'],
+                                last_name=row['last_name'],
+                                phone_number=row['phone_number'],
+                                pan_number=row['pan_number'],
+                                date_of_birth=row['date_of_birth'],
+                                gender=row['gender'],
+                                email=row['email'],
+                                city=row['city'],
+                                state=row['state'],
+                                pin_code=row['pin_code'],
+                                monthly_income=row['monthly_income'],
+                                profession=row['profession'],
+                                bureau_score=row['bureau_score'],
+                                status='pending'
+                            ))
+                            
+                            # Add to existing sets to prevent duplicates within this batch
+                            existing_phones.add(row['phone_number'])
+                            existing_pans.add(row['pan_number'])
+                        
+                        # Create leads in smaller batches to avoid long-running transactions
+                        created_users = []
+                        batch_size = 50  # Reduced from 100 for better SQLite compatibility
+                        for i in range(0, len(users_to_create), batch_size):
+                            batch = users_to_create[i:i + batch_size]
+                            if batch:
+                                created_batch = User.objects.bulk_create(batch)
+                                created_users.extend(created_batch)
+                    
+                    # If we get here, transaction succeeded
+                    break
+                    
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if 'database is locked' in error_msg and attempt < max_retries - 1:
+                        # Retry after a delay with exponential backoff
+                        time.sleep(retry_delay * (2 ** attempt))
+                        continue
+                    else:
+                        # Re-raise if not a lock error or max retries reached
+                        raise
             
             # Clear cache
             cache.delete(f'bulk_upload_{session_id}')
