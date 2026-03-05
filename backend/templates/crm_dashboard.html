@@ -1782,6 +1782,43 @@
         </div>
     </div>
 
+    <!-- Progress Modal -->
+    <div id="progressModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📤 Uploading Leads</h3>
+            </div>
+            <div style="padding: 20px;">
+                <div id="progressStatus" style="color: #667eea; font-weight: 600; margin-bottom: 15px;">
+                    Initializing upload...
+                </div>
+                <div style="background: #252535; border-radius: 10px; height: 30px; overflow: hidden; margin-bottom: 15px;">
+                    <div id="progressBar" style="background: linear-gradient(90deg, #667eea 0%, #48bb78 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">
+                        0%
+                    </div>
+                </div>
+                <div id="progressDetails" style="color: #a0a0b0; font-size: 14px;">
+                    <div>Processed: <span id="processedCount">0</span> / <span id="totalCount">0</span></div>
+                    <div>Batch: <span id="currentBatch">0</span> / <span id="totalBatches">0</span></div>
+                    <div style="margin-top: 10px;">
+                        <span style="color: #48bb78;">✓ Created: <span id="createdCount">0</span></span> &nbsp;&nbsp;
+                        <span style="color: #f59e0b;">↻ Updated: <span id="updatedCount">0</span></span>
+                    </div>
+                </div>
+                <div style="margin-top: 20px; padding: 10px; background: #252535; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <p style="color: #a0a0b0; margin: 0; font-size: 13px;">
+                        ⏳ Please wait... This may take a few minutes for large uploads.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Lead Modal -->
+            </div>
+        </div>
+    </div>
+
     <!-- Add Lead Modal -->
     <div id="leadModal" class="modal">
         <div class="modal-content">
@@ -2949,31 +2986,93 @@
         }
 
         async function confirmUpload(sessionId) {
+            // Close preview modal and show progress modal
+            closePreviewModal();
+            document.getElementById('progressModal').classList.add('active');
+            
+            // Reset progress indicators
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('progressStatus').textContent = 'Starting upload...';
+            document.getElementById('processedCount').textContent = '0';
+            document.getElementById('totalCount').textContent = '0';
+            document.getElementById('currentBatch').textContent = '0';
+            document.getElementById('totalBatches').textContent = '0';
+            document.getElementById('createdCount').textContent = '0';
+            document.getElementById('updatedCount').textContent = '0';
+            
             const formData = new FormData();
             formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
             formData.append('session_id', sessionId);
             
             try {
-                const response = await fetch('/crm-admin/leads/bulk-upload/', {
+                // Start the upload (async on backend)
+                const uploadPromise = fetch('/crm-admin/leads/bulk-upload/', {
                     method: 'POST',
                     body: formData
                 });
                 
+                // Start polling for progress
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const progressResponse = await fetch(`/crm-admin/leads/upload-progress/?session_id=${sessionId}`);
+                        const progressData = await progressResponse.json();
+                        
+                        if (progressData.success && progressData.progress) {
+                            const progress = progressData.progress;
+                            const percentage = Math.round((progress.processed_rows / progress.total_rows) * 100);
+                            
+                            // Update progress bar
+                            document.getElementById('progressBar').style.width = percentage + '%';
+                            document.getElementById('progressBar').textContent = percentage + '%';
+                            
+                            // Update status
+                            if (progress.status === 'processing') {
+                                document.getElementById('progressStatus').textContent = 
+                                    `Processing batch ${progress.current_batch} of ${progress.total_batches}...`;
+                            } else if (progress.status === 'completed') {
+                                document.getElementById('progressStatus').textContent = '✓ Upload completed!';
+                            }
+                            
+                            // Update counts
+                            document.getElementById('processedCount').textContent = progress.processed_rows;
+                            document.getElementById('totalCount').textContent = progress.total_rows;
+                            document.getElementById('currentBatch').textContent = progress.current_batch;
+                            document.getElementById('totalBatches').textContent = progress.total_batches;
+                            document.getElementById('createdCount').textContent = progress.created_count;
+                            document.getElementById('updatedCount').textContent = progress.updated_count;
+                            
+                            // Stop polling if completed
+                            if (progress.status === 'completed') {
+                                clearInterval(pollInterval);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching progress:', error);
+                    }
+                }, 500); // Poll every 500ms
+                
+                // Wait for upload to complete
+                const response = await uploadPromise;
                 const data = await response.json();
                 
+                // Stop polling
+                clearInterval(pollInterval);
+                
                 if (data.success) {
-                    let message = `Successfully uploaded ${data.created_count} leads!`;
-                    if (data.message) {
-                        message = data.message;
-                    }
-                    alert(message);
-                    closePreviewModal();
-                    location.reload();
+                    // Show final results
+                    setTimeout(() => {
+                        document.getElementById('progressModal').classList.remove('active');
+                        alert(`✓ Upload Complete!\n\n✓ Created: ${data.created_count} new leads\n↻ Updated: ${data.updated_count} existing leads`);
+                        location.reload();
+                    }, 1000); // Show completed state for 1 second
                 } else {
+                    document.getElementById('progressModal').classList.remove('active');
                     alert('Error uploading leads: ' + data.error);
                 }
             } catch (error) {
-                alert('Error uploading leads');
+                document.getElementById('progressModal').classList.remove('active');
+                alert('Error uploading leads: ' + error.message);
             }
         }
 

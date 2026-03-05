@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-$d2o0n@+fo^qbld@#+ub$@i7a%d9s^ojxwdx%h&@t95ne25vx!'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = [
     "crednorth.com",
@@ -46,7 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'users',  # Custom user app - contains all customer/lead data
+    'users',  # Custom user app - must be before other apps that use User model
     'loans',  # Loans app - contains LoanDisbursal model
     'lenders',  # Lenders app - contains Lender and LenderMIS models
     'crm_admin',  # CRM Admin app
@@ -91,13 +91,18 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {"default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 30,  # 30 seconds timeout to prevent database locked errors
+                "check_same_thread": False,  # Allow SQLite to be used across threads
+            },
+            "ATOMIC_REQUESTS": True,  # Wrap each request in a transaction
         }}
 
-DATABASES['default'] = dj_database_url.config(
-        # Replace this value with your local database's connection string.
-        default='postgresql://crednorth_db_bebp_user:IkA6xuvdIuaquhZc0nugZLXJ1s7P4DVC@dpg-d609988gjchc739trdsg-a/crednorth_db_bebp',
-        conn_max_age=600
-    )
+# DATABASES['default'] = dj_database_url.config(
+#         # Replace this value with your local database's connection string.
+#         default='postgresql://crednorth_db_bebp_user:IkA6xuvdIuaquhZc0nugZLXJ1s7P4DVC@dpg-d609988gjchc739trdsg-a/crednorth_db_bebp',
+#         conn_max_age=600
+#     )
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
@@ -160,3 +165,29 @@ AUTHENTICATION_BACKENDS = [
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
+
+# ========== FILE UPLOAD & SESSION SETTINGS FOR BULK UPLOADS ==========
+
+# File upload settings - Allow large CSV files
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB - allows ~20k leads
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
+
+# Session settings - Prevent timeout during long uploads
+SESSION_COOKIE_AGE = 3600  # 1 hour
+SESSION_SAVE_EVERY_REQUEST = True  # Keep session alive during uploads
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+# Cache settings - Use local memory cache to avoid database locks with SQLite
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'TIMEOUT': 3600,  # 1 hour cache timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 5000
+        }
+    }
+}
+
+# Request/Response settings
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Allow many fields in POST

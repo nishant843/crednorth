@@ -3,6 +3,7 @@ import tempfile
 import csv
 import uuid
 import io
+import time
 from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -15,6 +16,7 @@ from django.db.models import Sum, Count, Q
 from django.core.cache import cache
 from django.contrib import messages
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.db import transaction
 from loans.services.bulk_processor import process_csv
 from users.models import User
 from lenders.models import Lender
@@ -912,7 +914,9 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
 
 
 class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Bulk upload validated leads to database"""
+    """Bulk upload validated leads to database with batch processing"""
+    
+    BATCH_SIZE = 500  # Process 500 leads at a time to avoid timeout
     
     def test_func(self):
         return self.request.user.is_staff or self.request.user.is_superuser
@@ -934,112 +938,62 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
         
         try:
             rows = cached_data['rows']
+            total_rows = len(rows)
+            total_batches = (total_rows + self.BATCH_SIZE - 1) // self.BATCH_SIZE  # Calculate total batches
             
-            # Implement upsert logic: update if exists, create if new
+            # Process in batches to avoid timeout
             created_count = 0
             updated_count = 0
+            batch_number = 0
             
-            for row in rows:
-                phone_number = row['phone_number']
+            # Process rows in batches with transaction per batch
+            for batch_start in range(0, total_rows, self.BATCH_SIZE):
+                batch_number += 1
+                batch_end = min(batch_start + self.BATCH_SIZE, total_rows)
+                batch_rows = rows[batch_start:batch_end]
                 
-                # Safely parse date_of_birth
-                date_of_birth_value = None
-                if row.get('date_of_birth', '').strip():
+                # Update progress before processing batch
+                cache.set(f'upload_progress_{session_id}', {
+                    'total_rows': total_rows,
+                    'processed_rows': batch_start,
+                    'current_batch': batch_number,
+                    'total_batches': total_batches,
+                    'created_count': created_count,
+                    'updated_count': updated_count,
+                    'status': 'processing'
+                }, timeout=3600)
+                
+                # Process each batch with retry logic for database locks
+                max_retries = 3
+                retry_delay = 0.5
+                
+                for attempt in range(max_retries):
                     try:
-                        date_of_birth_value = datetime.strptime(row['date_of_birth'], '%Y-%m-%d').date()
-                    except:
-                        date_of_birth_value = None  # Skip invalid dates silently
-                
-                # Safely parse numeric fields
-                monthly_income_value = None
-                if row.get('monthly_income', '').strip():
-                    try:
-                        monthly_income_value = float(row['monthly_income'])
-                    except:
-                        monthly_income_value = None  # Skip invalid values silently
-                
-                bureau_score_value = None
-                if row.get('bureau_score', '').strip():
-                    try:
-                        bureau_score_value = int(row['bureau_score'])
-                    except:
-                        bureau_score_value = None  # Skip invalid values silently
-                
-                # Clean PAN number - only set if valid format, else empty
-                pan_number_value = ''
-                if row.get('pan_number', '').strip():
-                    pan = row['pan_number'].strip().upper()
-                    # Comprehensive PAN validation: 5 letters + 4 digits + 1 letter
-                    # Fourth character must be P, C, H, F, A, T, B, G, J, or L
-                    if (len(pan) == 10 and 
-                        pan[:5].isalpha() and 
-                        pan[5:9].isdigit() and 
-                        pan[9].isalpha() and
-                        pan[3] in ['P', 'C', 'H', 'F', 'A', 'T', 'B', 'G', 'J', 'L']):
-                        pan_number_value = pan
-                
-                # Clean pin code - only set if valid format (6 digits), else empty
-                pin_code_value = ''
-                if row.get('pin_code', '').strip():
-                    pin = row['pin_code'].strip()
-                    if pin.isdigit() and len(pin) == 6:
-                        pin_code_value = pin
-                
-                try:
-                    # Try to get existing user by phone number
-                    existing_user = User.objects.get(phone_number=phone_number)
-                    
-                    # Update existing user with new values (only if CSV value is not empty)
-                    # This preserves existing data when CSV field is empty
-                    if row.get('first_name', '').strip():
-                        existing_user.first_name = row['first_name']
-                    if row.get('last_name', '').strip():
-                        existing_user.last_name = row['last_name']
-                    if pan_number_value:
-                        existing_user.pan_number = pan_number_value
-                    if date_of_birth_value:
-                        existing_user.date_of_birth = date_of_birth_value
-                    if row.get('gender', '').strip():
-                        existing_user.gender = row['gender']
-                    if row.get('email', '').strip():
-                        existing_user.email = row['email']
-                    if row.get('city', '').strip():
-                        existing_user.city = row['city']
-                    if row.get('state', '').strip():
-                        existing_user.state = row['state']
-                    if pin_code_value:
-                        existing_user.pin_code = pin_code_value
-                    if monthly_income_value is not None:
-                        existing_user.monthly_income = monthly_income_value
-                    if row.get('profession', '').strip():
-                        existing_user.profession = row['profession']
-                    if bureau_score_value is not None:
-                        existing_user.bureau_score = bureau_score_value
-                    
-                    existing_user.save()
-                    updated_count += 1
-                    
-                except User.DoesNotExist:
-                    # Create new user if phone doesn't exist
-                    User.objects.create(
-                        phone_number=phone_number,
-                        first_name=row.get('first_name', ''),
-                        last_name=row.get('last_name', ''),
-                        pan_number=pan_number_value,
-                        date_of_birth=date_of_birth_value,
-                        gender=row.get('gender', ''),
-                        email=row.get('email', ''),
-                        city=row.get('city', ''),
-                        state=row.get('state', ''),
-                        pin_code=pin_code_value,
-                        monthly_income=monthly_income_value,
-                        profession=row.get('profession', ''),
-                        bureau_score=bureau_score_value,
-                        status='pending'
-                    )
-                    created_count += 1
+                        with transaction.atomic():
+                            batch_created, batch_updated = self._process_batch(batch_rows)
+                            created_count += batch_created
+                            updated_count += batch_updated
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if 'database is locked' in error_msg and attempt < max_retries - 1:
+                            time.sleep(retry_delay * (2 ** attempt))
+                            continue
+                        else:
+                            raise  # Re-raise if not a lock error or max retries reached
             
-            # Clear cache
+            # Mark as complete
+            cache.set(f'upload_progress_{session_id}', {
+                'total_rows': total_rows,
+                'processed_rows': total_rows,
+                'current_batch': total_batches,
+                'total_batches': total_batches,
+                'created_count': created_count,
+                'updated_count': updated_count,
+                'status': 'completed'
+            }, timeout=3600)
+            
+            # Clear upload data cache
             cache.delete(f'bulk_upload_{session_id}')
             
             response_data = {
@@ -1056,6 +1010,136 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                 'success': False,
                 'error': f'Error creating leads: {str(e)}'
             }, status=400)
+    
+    def _process_batch(self, batch_rows):
+        """Process a batch of rows and return counts"""
+        created_count = 0
+        updated_count = 0
+        
+        for row in batch_rows:
+            phone_number = row['phone_number']
+            
+            # Safely parse date_of_birth
+            date_of_birth_value = None
+            if row.get('date_of_birth', '').strip():
+                try:
+                    date_of_birth_value = datetime.strptime(row['date_of_birth'], '%Y-%m-%d').date()
+                except:
+                    date_of_birth_value = None
+            
+            # Safely parse numeric fields
+            monthly_income_value = None
+            if row.get('monthly_income', '').strip():
+                try:
+                    monthly_income_value = float(row['monthly_income'])
+                except:
+                    monthly_income_value = None
+            
+            bureau_score_value = None
+            if row.get('bureau_score', '').strip():
+                try:
+                    bureau_score_value = int(row['bureau_score'])
+                except:
+                    bureau_score_value = None
+            
+            # Clean PAN number
+            pan_number_value = ''
+            if row.get('pan_number', '').strip():
+                pan = row['pan_number'].strip().upper()
+                if (len(pan) == 10 and 
+                    pan[:5].isalpha() and 
+                    pan[5:9].isdigit() and 
+                    pan[9].isalpha() and
+                    pan[3] in ['P', 'C', 'H', 'F', 'A', 'T', 'B', 'G', 'J', 'L']):
+                    pan_number_value = pan
+            
+            # Clean pin code
+            pin_code_value = ''
+            if row.get('pin_code', '').strip():
+                pin = row['pin_code'].strip()
+                if pin.isdigit() and len(pin) == 6:
+                    pin_code_value = pin
+            
+            try:
+                # Try to get existing user by phone number
+                existing_user = User.objects.get(phone_number=phone_number)
+                
+                # Update existing user
+                if row.get('first_name', '').strip():
+                    existing_user.first_name = row['first_name']
+                if row.get('last_name', '').strip():
+                    existing_user.last_name = row['last_name']
+                if pan_number_value:
+                    existing_user.pan_number = pan_number_value
+                if date_of_birth_value:
+                    existing_user.date_of_birth = date_of_birth_value
+                if row.get('gender', '').strip():
+                    existing_user.gender = row['gender']
+                if row.get('email', '').strip():
+                    existing_user.email = row['email']
+                if row.get('city', '').strip():
+                    existing_user.city = row['city']
+                if row.get('state', '').strip():
+                    existing_user.state = row['state']
+                if pin_code_value:
+                    existing_user.pin_code = pin_code_value
+                if monthly_income_value is not None:
+                    existing_user.monthly_income = monthly_income_value
+                if row.get('profession', '').strip():
+                    existing_user.profession = row['profession']
+                if bureau_score_value is not None:
+                    existing_user.bureau_score = bureau_score_value
+                
+                existing_user.save()
+                updated_count += 1
+                
+            except User.DoesNotExist:
+                # Create new user
+                User.objects.create(
+                    phone_number=phone_number,
+                    first_name=row.get('first_name', ''),
+                    last_name=row.get('last_name', ''),
+                    pan_number=pan_number_value,
+                    date_of_birth=date_of_birth_value,
+                    gender=row.get('gender', ''),
+                    email=row.get('email', ''),
+                    city=row.get('city', ''),
+                    state=row.get('state', ''),
+                    pin_code=pin_code_value,
+                    monthly_income=monthly_income_value,
+                    profession=row.get('profession', ''),
+                    bureau_score=bureau_score_value,
+                    status='pending'
+                )
+                created_count += 1
+        
+        return created_count, updated_count
+
+
+class UploadProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
+    """Get progress status of bulk upload"""
+    
+    def test_func(self):
+        return self.request.user.is_staff or self.request.user.is_superuser
+    
+    def get(self, request):
+        session_id = request.GET.get('session_id')
+        
+        if not session_id:
+            return JsonResponse({'success': False, 'error': 'No session ID provided'}, status=400)
+        
+        progress_data = cache.get(f'upload_progress_{session_id}')
+        
+        if not progress_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'No progress data found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'progress': progress_data
+        })
 
 
 class DownloadSampleCSVView(LoginRequiredMixin, UserPassesTestMixin, View):
