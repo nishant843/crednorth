@@ -105,12 +105,13 @@ if os.environ.get('DATABASE_URL'):
     DATABASES['default'] = dj_database_url.config(
         conn_max_age=600,  # Connection pooling: keep connections alive for 10 minutes
         conn_health_checks=True,  # Verify connections are healthy
-        ssl_require=True,  # Require SSL for security
-        options={
-            'connect_timeout': 10,
-            'options': '-c statement_timeout=30000'  # 30 second query timeout
-        }
+        ssl_require=True  # Require SSL for security
     )
+    # Set database options
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000'
+    }
     # Optimize for high concurrency
     DATABASES['default']['ATOMIC_REQUESTS'] = False  # Manage transactions manually for performance
     DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True  # Better for connection pooling
@@ -223,14 +224,6 @@ else:
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000  # Allow many fields in POST (for bulk admin actions)
 
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
-
-# Database connection pooling (for PostgreSQL on Render)
-if os.environ.get('DATABASE_URL'):
-    # Use prepared statements for better performance
-    DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 10,
-        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000'
-    }
 
 # Session optimization for scale
 if os.environ.get('REDIS_URL'):
