@@ -196,13 +196,6 @@ if os.environ.get('REDIS_URL'):
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': os.environ.get('REDIS_URL'),
-            'OPTIONS': {
-                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                'CONNECTION_POOL_KWARGS': {
-                    'max_connections': 50,
-                    'retry_on_timeout': True,
-                },
-            },
             'TIMEOUT': 3600,  # 1 hour default
             'KEY_PREFIX': 'crednorth',
         }
