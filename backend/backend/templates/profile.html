@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - CredNorth</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0f0f1e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Navigation Bar */
+        .navbar {
+            background: #1a1a2e;
+            border-bottom: 1px solid #2a2a3e;
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            height: 70px;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        .nav-brand:hover {
+            opacity: 0.8;
+        }
+
+        .nav-brand .icon {
+            font-size: 28px;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            list-style: none;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            color: #b0b0c0;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #2a2a3e;
+            color: #ffffff;
+        }
+
+        .nav-link.active {
+            background: #667eea;
+            color: #ffffff;
+        }
+
+        .nav-user {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            background: #2a2a3e;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .user-badge {
+            background: #667eea;
+            color: #ffffff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .user-badge.staff {
+            background: #48bb78;
+        }
+
+        .btn-logout {
+            padding: 10px 20px;
+            background: #ef4444;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+
+        /* Main Content */
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 30px;
+        }
+
+        .profile-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 20px;
+        }
+
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .profile-header h1 {
+            font-size: 36px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 10px;
+        }
+
+        .profile-header p {
+            font-size: 18px;
+            color: #a0a0b0;
+        }
+
+        .profile-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .profile-card h2 {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #2a2a3e;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .info-label {
+            color: #a0a0b0;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 12px 15px;
+            background: #0f0f1e;
+            border-radius: 8px;
+            border: 1px solid #2a2a3e;
+        }
+
+        .info-value.empty {
+            color: #666;
+            font-style: italic;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .status-badge.pending {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .status-badge.approved {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .status-badge.rejected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .consent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .consent-badge.yes {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .consent-badge.no {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: #667eea;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+
+        .back-button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                height: auto;
+                padding: 15px 20px;
+                gap: 15px;
+            }
+
+            .nav-menu {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .profile-header h1 {
+                font-size: 28px;
+            }
+
+            .profile-card {
+                padding: 25px;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">
+                <span class="icon">🏦</span>
+                <span>CredNorth</span>
+            </a>
+
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="/" class="nav-link">
+                        <span>🏠</span>
+                        <span>Home</span>
+                    </a>
+                </li>
+                {% if user.is_staff or user.is_superuser %}
+                <li class="nav-item">
+                    <a href="/crm-admin/" class="nav-link">
+                        <span>📊</span>
+                        <span>CRM Dashboard</span>
+                    </a>
+                </li>
+                {% endif %}
+                <li class="nav-item">
+                    <a href="/profile/" class="nav-link active">
+                        <span>👤</span>
+                        <span>Profile</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="nav-user">
+                <div class="user-info">
+                    <span>👤</span>
+                    <span>{{ user.phone_number }}</span>
+                    {% if user.is_superuser %}
+                        <span class="user-badge">Admin</span>
+                    {% elif user.is_staff %}
+                        <span class="user-badge staff">Staff</span>
+                    {% endif %}
+                </div>
+                <a href="/logout/" class="btn-logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="profile-header">
+            <div class="profile-avatar">👤</div>
+            <h1>{{ user.first_name }} {{ user.last_name }}</h1>
+            <p>{{ user.phone_number }}</p>
+        </div>
+
+        <!-- Personal Information -->
+        <div class="profile-card">
+            <h2>📋 Personal Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">First Name</span>
+                    <span class="info-value">{{ user.first_name|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Last Name</span>
+                    <span class="info-value">{{ user.last_name|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Phone Number</span>
+                    <span class="info-value">{{ user.phone_number }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Email</span>
+                    <span class="info-value {% if not user.email %}empty{% endif %}">{{ user.email|default:"Not provided" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">PAN Number</span>
+                    <span class="info-value">{{ user.pan_number|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Date of Birth</span>
+                    <span class="info-value {% if not user.date_of_birth %}empty{% endif %}">{{ user.date_of_birth|date:"d M, Y"|default:"Not provided" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Age</span>
+                    <span class="info-value {% if not user.age %}empty{% endif %}">{{ user.age|default:"—" }} years</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Gender</span>
+                    <span class="info-value {% if not user.gender %}empty{% endif %}">{{ user.gender|default:"Not specified" }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Address Information -->
+        <div class="profile-card">
+            <h2>📍 Address Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">City</span>
+                    <span class="info-value {% if not user.city %}empty{% endif %}">{{ user.city|default:"Not provided" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">State</span>
+                    <span class="info-value {% if not user.state %}empty{% endif %}">{{ user.state|default:"Not provided" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">PIN Code</span>
+                    <span class="info-value {% if not user.pin_code %}empty{% endif %}">{{ user.pin_code|default:"Not provided" }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Professional & Financial Information -->
+        <div class="profile-card">
+            <h2>💼 Professional & Financial Details</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Profession</span>
+                    <span class="info-value {% if not user.profession %}empty{% endif %}">{{ user.profession|default:"Not specified" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Monthly Income</span>
+                    <span class="info-value {% if not user.monthly_income %}empty{% endif %}">
+                        {% if user.monthly_income %}
+                            ₹{{ user.monthly_income|floatformat:0 }}
+                        {% else %}
+                            Not provided
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Bureau Score</span>
+                    <span class="info-value {% if not user.bureau_score %}empty{% endif %}">
+                        {% if user.bureau_score %}
+                            <span style="color: {% if user.bureau_score >= 750 %}#10b981{% elif user.bureau_score >= 650 %}#fbbf24{% else %}#ef4444{% endif %}; font-weight: bold;">
+                                {{ user.bureau_score }}
+                            </span>
+                        {% else %}
+                            Not available
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Status -->
+        <div class="profile-card">
+            <h2>⚙️ Account Status</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Status</span>
+                    <span class="status-badge {{ user.status }}">{{ user.status }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Consent Taken</span>
+                    <span class="consent-badge {% if user.consent_taken %}yes{% else %}no{% endif %}">
+                        {% if user.consent_taken %}
+                            ✓ Yes
+                        {% else %}
+                            ✗ No
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Account Type</span>
+                    <span class="info-value">
+                        {% if user.is_superuser %}
+                            <span class="user-badge">Administrator</span>
+                        {% elif user.is_staff %}
+                            <span class="user-badge staff">Staff Member</span>
+                        {% else %}
+                            Regular User
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Member Since</span>
+                    <span class="info-value">{{ user.created_at|date:"d M, Y" }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center;">
+            <a href="/" class="back-button">← Back to Home</a>
+        </div>
+    </div>
+</body>
+</html>
