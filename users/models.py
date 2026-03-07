@@ -206,11 +206,24 @@ class User(PermissionsMixin, models.Model):
         verbose_name_plural = 'Users'
         ordering = ['-created_at']
         indexes = [
+            # Single field indexes
             models.Index(fields=['phone_number'], name='idx_user_phone'),
             models.Index(fields=['pan_number'], name='idx_user_pan'),
             models.Index(fields=['status'], name='idx_user_status'),
             models.Index(fields=['bureau_score'], name='idx_user_bureau'),
-            models.Index(fields=['created_at'], name='idx_user_created_at'),
+            models.Index(fields=['created_at'], name='idx_user_created'),
+            models.Index(fields=['is_active'], name='idx_user_active'),
+            models.Index(fields=['profession'], name='idx_user_profession'),
+            models.Index(fields=['pin_code'], name='idx_user_pincode'),
+            models.Index(fields=['city'], name='idx_user_city'),
+            models.Index(fields=['state'], name='idx_user_state'),
+            # Composite indexes for common query patterns (1M+ users optimization)
+            models.Index(fields=['status', 'created_at'], name='idx_status_created'),
+            models.Index(fields=['profession', 'status'], name='idx_prof_status'),
+            models.Index(fields=['is_active', 'status'], name='idx_active_status'),
+            models.Index(fields=['bureau_score', 'status'], name='idx_bureau_status'),
+            models.Index(fields=['pin_code', 'status'], name='idx_pin_status'),
+            models.Index(fields=['created_at', 'status'], name='idx_created_status'),
         ]
         constraints = [
             models.UniqueConstraint(

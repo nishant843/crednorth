@@ -13,6 +13,11 @@ from .views_admin import (
     LeadUpdateView,
     LeadDeleteView
 )
+from .views_bulk_management import (
+    BulkUserManagementView,
+    BulkUserPreviewView,
+    BulkOperationProgressView
+)
 
 urlpatterns = [
     path('admin/bulk-dedupe/', BulkDedupeAPIView.as_view()),
@@ -27,4 +32,8 @@ urlpatterns = [
     path('leads/<int:lead_id>/update/', LeadUpdateView.as_view(), name='lead_update'),
     path('leads/<int:lead_id>/delete/', LeadDeleteView.as_view(), name='lead_delete'),
     path('lenders/create/', LenderCreateView.as_view(), name='lender_create'),
+    # UI-based bulk operations for 1M+ users
+    path('admin/bulk-operations/', BulkUserManagementView.as_view(), name='bulk_operations'),
+    path('admin/bulk-preview/', BulkUserPreviewView.as_view(), name='bulk_preview'),
+    path('admin/bulk-progress/', BulkOperationProgressView.as_view(), name='bulk_progress'),
 ]
