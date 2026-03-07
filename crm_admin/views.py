@@ -941,6 +941,17 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
             total_rows = len(rows)
             total_batches = (total_rows + self.BATCH_SIZE - 1) // self.BATCH_SIZE  # Calculate total batches
             
+            # Initialize progress tracking
+            cache.set(f'upload_progress_{session_id}', {
+                'total_rows': total_rows,
+                'processed_rows': 0,
+                'current_batch': 0,
+                'total_batches': total_batches,
+                'created_count': 0,
+                'updated_count': 0,
+                'status': 'processing'
+            }, timeout=3600)
+            
             # Process in batches to avoid timeout
             created_count = 0
             updated_count = 0
@@ -951,17 +962,6 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                 batch_number += 1
                 batch_end = min(batch_start + self.BATCH_SIZE, total_rows)
                 batch_rows = rows[batch_start:batch_end]
-                
-                # Update progress before processing batch
-                cache.set(f'upload_progress_{session_id}', {
-                    'total_rows': total_rows,
-                    'processed_rows': batch_start,
-                    'current_batch': batch_number,
-                    'total_batches': total_batches,
-                    'created_count': created_count,
-                    'updated_count': updated_count,
-                    'status': 'processing'
-                }, timeout=3600)
                 
                 # Process each batch with retry logic for database locks
                 max_retries = 3
@@ -981,6 +981,17 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                             continue
                         else:
                             raise  # Re-raise if not a lock error or max retries reached
+                
+                # Update progress after processing batch
+                cache.set(f'upload_progress_{session_id}', {
+                    'total_rows': total_rows,
+                    'processed_rows': batch_end,
+                    'current_batch': batch_number,
+                    'total_batches': total_batches,
+                    'created_count': created_count,
+                    'updated_count': updated_count,
+                    'status': 'processing'
+                }, timeout=3600)
             
             # Mark as complete
             cache.set(f'upload_progress_{session_id}', {

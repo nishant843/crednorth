@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk User Management - CredNorth</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .filter-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .filter-section h2 {
+            color: #444;
+            margin-bottom: 20px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+        }
+
+        .filter-section h2::before {
+            content: '🔍';
+            margin-right: 10px;
+            font-size: 20px;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            color: #555;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-preview {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-preview:hover {
+            background: #1976D2;
+        }
+
+        .btn-clear {
+            background: #666;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #555;
+        }
+
+        .preview-section {
+            margin-bottom: 30px;
+            display: none;
+        }
+
+        .preview-section.active {
+            display: block;
+        }
+
+        .preview-header {
+            background: #e3f2fd;
+            padding: 15px 20px;
+            border-radius: 6px 6px 0 0;
+            border: 1px solid #90caf9;
+            border-bottom: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-stats {
+            font-size: 16px;
+            color: #1565c0;
+            font-weight: 600;
+        }
+
+        .preview-table-container {
+            border: 1px solid #90caf9;
+            border-radius: 0 0 6px 6px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f5f5f5;
+        }
+
+        thead th {
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+            color: #666;
+            font-weight: 600;
+            border-bottom: 2px solid #ddd;
+        }
+
+        tbody td {
+            padding: 12px;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+        }
+
+        tbody tr:hover {
+            background: #f9f9f9;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-inactive {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .status-pending {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .status-approved {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status-rejected {
+            background: #fce4ec;
+            color: #880e4f;
+        }
+
+        .actions-section {
+            background: #fff8e1;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #ffe082;
+            margin-bottom: 30px;
+            display: none;
+        }
+
+        .actions-section.active {
+            display: block;
+        }
+
+        .actions-section h2 {
+            color: #f57c00;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+        }
+
+        .actions-section h2::before {
+            content: '⚡';
+            margin-right: 10px;
+            font-size: 20px;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-activate {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-activate:hover {
+            background: #45a049;
+        }
+
+        .btn-deactivate {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-deactivate:hover {
+            background: #da190b;
+        }
+
+        .btn-pending {
+            background: #FF9800;
+            color: white;
+        }
+
+        .btn-pending:hover {
+            background: #e68900;
+        }
+
+        .btn-approved {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-approved:hover {
+            background: #0b7dda;
+        }
+
+        .btn-rejected {
+            background: #9C27B0;
+            color: white;
+        }
+
+        .btn-rejected:hover {
+            background: #7b1fa2;
+        }
+
+        .btn-delete {
+            background: #d32f2f;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #b71c1c;
+        }
+
+        .warning-box {
+            background: #ffebee;
+            border: 1px solid #ffcdd2;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            color: #c62828;
+            font-size: 14px;
+            display: none;
+        }
+
+        .warning-box.active {
+            display: block;
+        }
+
+        .warning-box strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .alert.active {
+            display: block;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #2196F3;
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .back-link::before {
+            content: '← ';
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/admin/" class="back-link">Back to Admin Dashboard</a>
+
+        <h1>Bulk User Management</h1>
+        <p class="subtitle">Filter users and perform bulk operations efficiently</p>
+
+        <div id="alertBox" class="alert"></div>
+
+        <!-- Filter Section -->
+        <div class="filter-section">
+            <h2>Filter Users</h2>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label for="status">Status</label>
+                    <select id="status">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="is_active">Active Status</label>
+                    <select id="is_active">
+                        <option value="">All</option>
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="profession">Profession</label>
+                    <select id="profession">
+                        <option value="">All Professions</option>
+                        <option value="salaried">Salaried</option>
+                        <option value="self_employed">Self Employed</option>
+                        <option value="business">Business</option>
+                        <option value="student">Student</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min_income">Min Income</label>
+                    <input type="number" id="min_income" placeholder="e.g., 25000">
+                </div>
+
+                <div class="filter-group">
+                    <label for="max_income">Max Income</label>
+                    <input type="number" id="max_income" placeholder="e.g., 100000">
+                </div>
+
+                <div class="filter-group">
+                    <label for="min_bureau_score">Min Bureau Score</label>
+                    <input type="number" id="min_bureau_score" placeholder="e.g., 650">
+                </div>
+
+                <div class="filter-group">
+                    <label for="max_bureau_score">Max Bureau Score</label>
+                    <input type="number" id="max_bureau_score" placeholder="e.g., 850">
+                </div>
+
+                <div class="filter-group">
+                    <label for="pin_code">Pin Code</label>
+                    <input type="text" id="pin_code" placeholder="e.g., 110001">
+                </div>
+
+                <div class="filter-group">
+                    <label for="city">City</label>
+                    <input type="text" id="city" placeholder="e.g., Delhi">
+                </div>
+
+                <div class="filter-group">
+                    <label for="state">State</label>
+                    <input type="text" id="state" placeholder="e.g., Delhi">
+                </div>
+            </div>
+
+            <div class="button-row">
+                <button class="btn-preview" onclick="previewUsers()">Preview Users</button>
+                <button class="btn-clear" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        </div>
+
+        <!-- Preview Section -->
+        <div id="previewSection" class="preview-section">
+            <div class="preview-header">
+                <div class="preview-stats">
+                    <span id="totalCount">0</span> users match your filters
+                    <span style="color: #666; font-weight: normal; margin-left: 10px;">(showing first 50)</span>
+                </div>
+            </div>
+            <div class="preview-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phone</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Active</th>
+                            <th>Profession</th>
+                            <th>Income</th>
+                            <th>Bureau Score</th>
+                            <th>City</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewTableBody">
+                        <tr>
+                            <td colspan="8" class="loading">Loading</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Actions Section -->
+        <div id="actionsSection" class="actions-section">
+            <h2>Bulk Actions</h2>
+            <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
+                These actions will be applied to <strong id="actionCount">0</strong> users matching your filters.
+            </p>
+            <div class="action-buttons">
+                <button class="btn-activate" onclick="performAction('activate')">✓ Activate Users</button>
+                <button class="btn-deactivate" onclick="performAction('deactivate')">✗ Deactivate Users</button>
+                <button class="btn-pending" onclick="performAction('mark_pending')">⏳ Mark as Pending</button>
+                <button class="btn-approved" onclick="performAction('mark_approved')">✓ Mark as Approved</button>
+                <button class="btn-rejected" onclick="performAction('mark_rejected')">✗ Mark as Rejected</button>
+                <button class="btn-delete" onclick="performAction('delete')">🗑️ Delete Users</button>
+            </div>
+            <div id="deleteWarning" class="warning-box">
+                <strong>⚠️ Warning:</strong>
+                You can only delete up to 10,000 users at once for safety. If you need to delete more, please use multiple operations or contact support.
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="progress-section" style="display: none;">
+            <h2>⚡ Processing Operation</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Initializing...</div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .progress-section {
+            background: #f0f7ff;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #90caf9;
+            margin-bottom: 30px;
+        }
+
+        .progress-section h2 {
+            color: #1565c0;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+
+        .progress-bar-container {
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e3f2fd;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2196F3, #1976D2);
+            border-radius: 15px;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .progress-text {
+            margin-top: 10px;
+            text-align: center;
+            color: #1565c0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+    </style>
+
+    <script>
+        let currentFilters = {};
+        let currentTotal = 0;
+
+        function getFilters() {
+            const filters = {};
+            
+            const status = document.getElementById('status').value;
+            if (status) filters.status = status;
+
+            const is_active = document.getElementById('is_active').value;
+            if (is_active) filters.is_active = is_active;
+
+            const profession = document.getElementById('profession').value;
+            if (profession) filters.profession = profession;
+
+            const min_income = document.getElementById('min_income').value;
+            if (min_income) filters.min_income = min_income;
+
+            const max_income = document.getElementById('max_income').value;
+            if (max_income) filters.max_income = max_income;
+
+            const min_bureau_score = document.getElementById('min_bureau_score').value;
+            if (min_bureau_score) filters.min_bureau_score = min_bureau_score;
+
+            const max_bureau_score = document.getElementById('max_bureau_score').value;
+            if (max_bureau_score) filters.max_bureau_score = max_bureau_score;
+
+            const pin_code = document.getElementById('pin_code').value;
+            if (pin_code) filters.pin_code = pin_code;
+
+            const city = document.getElementById('city').value;
+            if (city) filters.city = city;
+
+            const state = document.getElementById('state').value;
+            if (state) filters.state = state;
+
+            return filters;
+        }
+
+        function clearFilters() {
+            document.getElementById('status').value = '';
+            document.getElementById('is_active').value = '';
+            document.getElementById('profession').value = '';
+            document.getElementById('min_income').value = '';
+            document.getElementById('max_income').value = '';
+            document.getElementById('min_bureau_score').value = '';
+            document.getElementById('max_bureau_score').value = '';
+            document.getElementById('pin_code').value = '';
+            document.getElementById('city').value = '';
+            document.getElementById('state').value = '';
+
+            document.getElementById('previewSection').classList.remove('active');
+            document.getElementById('actionsSection').classList.remove('active');
+            hideAlert();
+        }
+
+        async function previewUsers() {
+            const filters = getFilters();
+            currentFilters = filters;
+
+            // Show preview section
+            document.getElementById('previewSection').classList.add('active');
+            document.getElementById('previewTableBody').innerHTML = '<tr><td colspan="8" class="loading">Loading</td></tr>';
+            hideAlert();
+
+            try {
+                const params = new URLSearchParams(filters);
+                const response = await fetch(`/api/admin/bulk-preview/?${params}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    currentTotal = data.total;
+                    document.getElementById('totalCount').textContent = data.total.toLocaleString();
+                    document.getElementById('actionCount').textContent = data.total.toLocaleString();
+
+                    if (data.total === 0) {
+                        document.getElementById('previewTableBody').innerHTML = 
+                            '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #999;">No users match your filters</td></tr>';
+                        document.getElementById('actionsSection').classList.remove('active');
+                        return;
+                    }
+
+                    // Render table
+                    let html = '';
+                    data.users.forEach(user => {
+                        html += `
+                            <tr>
+                                <td>${user.phone_number}</td>
+                                <td>${user.first_name || ''} ${user.last_name || ''}</td>
+                                <td><span class="status-badge status-${user.status || 'pending'}">${user.status || 'pending'}</span></td>
+                                <td><span class="status-badge status-${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Active' : 'Inactive'}</span></td>
+                                <td>${user.profession || 'N/A'}</td>
+                                <td>₹${user.monthly_income ? user.monthly_income.toLocaleString() : 'N/A'}</td>
+                                <td>${user.bureau_score || 'N/A'}</td>
+                                <td>${user.city || 'N/A'}</td>
+                            </tr>
+                        `;
+                    });
+                    document.getElementById('previewTableBody').innerHTML = html;
+
+                    // Show actions section
+                    document.getElementById('actionsSection').classList.add('active');
+
+                    // Show delete warning if needed
+                    if (data.total > 10000) {
+                        document.getElementById('deleteWarning').classList.add('active');
+                    } else {
+                        document.getElementById('deleteWarning').classList.remove('active');
+                    }
+                } else {
+                    showAlert('error', data.message || 'Failed to load preview');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        async function performAction(action) {
+            const actionNames = {
+                'activate': 'Activate',
+                'deactivate': 'Deactivate',
+                'mark_pending': 'Mark as Pending',
+                'mark_approved': 'Mark as Approved',
+                'mark_rejected': 'Mark as Rejected',
+                'delete': 'Delete'
+            };
+
+            const actionName = actionNames[action];
+            const isDangerous = action === 'delete' || action === 'deactivate';
+
+            // Enhanced confirmation
+            let confirmMessage = `Are you sure you want to ${actionName.toLowerCase()} ${currentTotal.toLocaleString()} users?`;
+            if (isDangerous) {
+                confirmMessage += '\n\nThis action cannot be undone!';
+            }
+
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
+            // Extra confirmation for delete
+            if (action === 'delete') {
+                const typeConfirm = prompt(`Type "DELETE" to confirm deletion of ${currentTotal.toLocaleString()} users:`);
+                if (typeConfirm !== 'DELETE') {
+                    showAlert('info', 'Deletion cancelled');
+                    return;
+                }
+            }
+
+            // Show progress section
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Initializing...';
+            hideAlert();
+
+            try {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                                 getCookie('csrftoken');
+
+                // Start the operation
+                const response = await fetch('/api/admin/bulk-operations/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        filters: currentFilters
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.operation_id) {
+                    // Poll for progress
+                    pollProgress(data.operation_id, actionName);
+                } else {
+                    document.getElementById('progressSection').style.display = 'none';
+                    showAlert('error', data.error || 'Operation failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('progressSection').style.display = 'none';
+                showAlert('error', 'Network error. Please try again.');
+            }
+        }
+
+        async function pollProgress(operationId, actionName) {
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/admin/bulk-progress/?operation_id=${operationId}`);
+                    const data = await response.json();
+
+                    if (data.success && data.progress) {
+                        const progress = data.progress;
+
+                        if (progress.status === 'processing') {
+                            // Update progress bar
+                            const percentage = progress.total > 0 
+                                ? Math.round((progress.processed / progress.total) * 100)
+                                : 0;
+                            
+                            document.getElementById('progressFill').style.width = percentage + '%';
+                            document.getElementById('progressFill').textContent = percentage + '%';
+                            document.getElementById('progressText').textContent = 
+                                `Processing batch ${progress.current_batch} of ${progress.total_batches} (${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} users)`;
+
+                        } else if (progress.status === 'completed') {
+                            // Operation completed
+                            clearInterval(pollInterval);
+                            document.getElementById('progressFill').style.width = '100%';
+                            document.getElementById('progressFill').textContent = '100%';
+                            document.getElementById('progressText').textContent = 'Completed!';
+                            
+                            setTimeout(() => {
+                                document.getElementById('progressSection').style.display = 'none';
+                                showAlert('success', progress.message || `✓ ${actionName} completed!`);
+                                // Refresh preview
+                                previewUsers();
+                            }, 1500);
+
+                        } else if (progress.status === 'failed') {
+                            // Operation failed
+                            clearInterval(pollInterval);
+                            document.getElementById('progressSection').style.display = 'none';
+                            showAlert('error', progress.error || 'Operation failed');
+                        }
+                    } else {
+                        // Progress not found, stop polling
+                        clearInterval(pollInterval);
+                        document.getElementById('progressSection').style.display = 'none';
+                        showAlert('error', 'Could not track operation progress');
+                    }
+                } catch (error) {
+                    console.error('Progress polling error:', error);
+                    clearInterval(pollInterval);
+                    document.getElementById('progressSection').style.display = 'none';
+                    showAlert('error', 'Error tracking progress');
+                }
+            }, 500);  // Poll every 500ms for smooth updates
+        }
+
+        function showAlert(type, message) {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.className = `alert alert-${type} active`;
+            alertBox.textContent = message;
+            
+            // Auto-hide after 5 seconds for success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    hideAlert();
+                }, 5000);
+            }
+        }
+
+        function hideAlert() {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.classList.remove('active');
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Add CSRF token to page
+        window.addEventListener('DOMContentLoaded', () => {
+            const csrfToken = getCookie('csrftoken');
+            if (csrfToken) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'csrfmiddlewaretoken';
+                input.value = csrfToken;
+                document.body.appendChild(input);
+            }
+        });
+    </script>
+</body>
+</html>

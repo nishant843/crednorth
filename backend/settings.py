@@ -88,6 +88,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# Development: SQLite (for local development only)
 DATABASES = {"default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
@@ -98,11 +99,21 @@ DATABASES = {"default": {
             "ATOMIC_REQUESTS": True,  # Wrap each request in a transaction
         }}
 
-DATABASES['default'] = dj_database_url.config(
-        # Replace this value with your local database's connection string.
-        default='postgresql://crednorth_db_bebp_user:IkA6xuvdIuaquhZc0nugZLXJ1s7P4DVC@dpg-d609988gjchc739trdsg-a/crednorth_db_bebp',
-        conn_max_age=600
+# Production: PostgreSQL on Render (required for 1M+ users)
+if os.environ.get('DATABASE_URL'):
+    # Use PostgreSQL from environment variable (Render.com)
+    DATABASES['default'] = dj_database_url.config(
+        conn_max_age=600,  # Connection pooling: keep connections alive for 10 minutes
+        conn_health_checks=True,  # Verify connections are healthy
+        ssl_require=True,  # Require SSL for security
+        options={
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000'  # 30 second query timeout
+        }
     )
+    # Optimize for high concurrency
+    DATABASES['default']['ATOMIC_REQUESTS'] = False  # Manage transactions manually for performance
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True  # Better for connection pooling
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
@@ -177,17 +188,83 @@ SESSION_COOKIE_AGE = 3600  # 1 hour
 SESSION_SAVE_EVERY_REQUEST = True  # Keep session alive during uploads
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
-# Cache settings - Use local memory cache to avoid database locks with SQLite
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
-        'TIMEOUT': 3600,  # 1 hour cache timeout
-        'OPTIONS': {
-            'MAX_ENTRIES': 5000
+# Cache settings - Redis for production (Render.com), Local memory for dev
+if os.environ.get('REDIS_URL'):
+    # Production: Redis cache for scalability (1M+ users)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': os.environ.get('REDIS_URL'),
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'CONNECTION_POOL_KWARGS': {
+                    'max_connections': 50,
+                    'retry_on_timeout': True,
+                },
+            },
+            'TIMEOUT': 3600,  # 1 hour default
+            'KEY_PREFIX': 'crednorth',
         }
     }
-}
+else:
+    # Development: Local memory cache
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': 3600,  # 1 hour cache timeout
+            'OPTIONS': {
+                'MAX_ENTRIES': 5000
+            }
+        }
+    }
 
 # Request/Response settings
-DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Allow many fields in POST
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000  # Allow many fields in POST (for bulk admin actions)
+
+# ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
+
+# Database connection pooling (for PostgreSQL on Render)
+if os.environ.get('DATABASE_URL'):
+    # Use prepared statements for better performance
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000'
+    }
+
+# Session optimization for scale
+if os.environ.get('REDIS_URL'):
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'  # Use Redis for sessions
+    SESSION_CACHE_ALIAS = 'default'
+else:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database sessions for dev
+
+# Logging configuration for production monitoring
+if not DEBUG:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'verbose': {
+                'format': '{levelname} {asctime} {module} {message}',
+                'style': '{',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'verbose',
+            },
+        },
+        'root': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+        'loggers': {
+            'django.db.backends': {
+                'handlers': ['console'],
+                'level': 'WARNING',  # Only log slow queries
+                'propagate': False,
+            },
+        },
+    }
