@@ -4,6 +4,7 @@ Leads are PRIMARY - CSV uploads create Leads → auto-generate Users.
 Leads are potential customers with no lender associations.
 """
 from datetime import datetime
+import re
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from users.models import User
@@ -44,11 +45,22 @@ def create_or_update_lead_from_csv_row(data_dict):
         ValueError: If data types cannot be converted properly
     """
     
-    # Normalize keys to lowercase for case-insensitive matching
-    data = {k.lower().strip(): v for k, v in data_dict.items() if v}
+    # Normalize keys to lowercase, remove BOM, and convert separators to underscores.
+    data = {}
+    for k, v in data_dict.items():
+        if not v:
+            continue
+        normalized_key = re.sub(r'[^a-z0-9]+', '_', str(k).replace('\ufeff', '').strip().lower()).strip('_')
+        data[normalized_key] = v
+
+    def get_value(*keys):
+        for key in keys:
+            if key in data and data[key] is not None:
+                return str(data[key]).strip()
+        return ''
     
     # Extract REQUIRED field - only phone_number
-    phone_number = data.get('phone_number', '').strip()
+    phone_number = get_value('phone_number', 'phone', 'mobile', 'mobile_number', 'contact_number')
     if not phone_number:
         raise ValidationError('phone_number is required')
     
@@ -63,31 +75,40 @@ def create_or_update_lead_from_csv_row(data_dict):
     }
     
     # Extract optional fields
-    first_name = data.get('first_name', '').strip()
+    first_name = get_value('first_name', 'firstname', 'first')
     if first_name:
         lead_data['first_name'] = first_name
     
-    last_name = data.get('last_name', '').strip()
+    last_name = get_value('last_name', 'lastname', 'surname', 'last')
     if last_name:
         lead_data['last_name'] = last_name
+
+    # If only a single name field exists, split into first and last.
+    if not first_name and not last_name:
+        full_name = get_value('name', 'full_name', 'fullname')
+        if full_name:
+            parts = full_name.split(None, 1)
+            lead_data['first_name'] = parts[0]
+            if len(parts) > 1:
+                lead_data['last_name'] = parts[1]
     
-    pan_number = data.get('pan_number', data.get('pan', '')).strip().upper()
+    pan_number = get_value('pan_number', 'pan', 'pan_no', 'pan_card').upper()
     if pan_number:
         lead_data['pan_number'] = pan_number
     
-    pin_code = data.get('pin_code', data.get('pincode', '')).strip()
+    pin_code = get_value('pin_code', 'pincode', 'pin', 'zip', 'postal_code')
     if pin_code:
         if len(pin_code) != 6:
             pin_code = pin_code.zfill(6)  # Pad with zeros if needed
         lead_data['pin_code'] = pin_code
     
     # Email
-    email = data.get('email', '').strip()
+    email = get_value('email', 'email_id', 'mail')
     if email:
         lead_data['email'] = email
     
     # Gender
-    gender = data.get('gender', '').strip()
+    gender = get_value('gender', 'sex')
     if gender:
         gender_map = {
             'm': 'Male',
@@ -100,7 +121,7 @@ def create_or_update_lead_from_csv_row(data_dict):
         lead_data['gender'] = gender_map.get(gender.lower(), gender)
     
     # Date of birth
-    dob = data.get('date_of_birth', data.get('dob', '')).strip()
+    dob = get_value('date_of_birth', 'dob', 'birth_date')
     if dob:
         try:
             for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%m/%d'):
@@ -113,13 +134,16 @@ def create_or_update_lead_from_csv_row(data_dict):
             pass  # Skip if date parsing fails
     
     # Location
-    if 'city' in data:
-        lead_data['city'] = data['city'].strip()
-    if 'state' in data:
-        lead_data['state'] = data['state'].strip()
+    city = get_value('city', 'town')
+    if city:
+        lead_data['city'] = city
+
+    state = get_value('state', 'province')
+    if state:
+        lead_data['state'] = state
     
     # Profession
-    profession = data.get('profession', data.get('employment_type', '')).strip()
+    profession = get_value('profession', 'employment_type', 'occupation', 'job_type')
     if profession:
         prof_map = {
             'salaried': 'Salaried',
@@ -135,7 +159,7 @@ def create_or_update_lead_from_csv_row(data_dict):
             lead_data['profession'] = profession
     
     # Monthly income
-    income = data.get('monthly_income', data.get('income', '')).strip()
+    income = get_value('monthly_income', 'income', 'salary', 'monthly_salary')
     if income:
         try:
             lead_data['monthly_income'] = float(income)
@@ -143,7 +167,7 @@ def create_or_update_lead_from_csv_row(data_dict):
             pass
     
     # Bureau score
-    bureau_score = data.get('bureau_score', '').strip()
+    bureau_score = get_value('bureau_score', 'cibil', 'cibil_score', 'credit_score')
     if bureau_score:
         try:
             score = int(bureau_score)
@@ -153,14 +177,14 @@ def create_or_update_lead_from_csv_row(data_dict):
             pass
     
     # Consent
-    consent = data.get('consent_taken', data.get('consent', '')).strip().lower()
+    consent = get_value('consent_taken', 'consent').lower()
     if consent in ('true', '1', 'yes', 'y'):
         lead_data['consent_taken'] = True
     elif consent in ('false', '0', 'no', 'n'):
         lead_data['consent_taken'] = False
     
     # Status
-    status = data.get('status', '').strip().lower()
+    status = get_value('status').lower()
     if status in ('pending', 'approved', 'rejected'):
         lead_data['status'] = status
     
