@@ -190,18 +190,33 @@ SESSION_SAVE_EVERY_REQUEST = True  # Keep session alive during uploads
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 # Cache settings - Redis for production (Render.com), Local memory for dev
-if os.environ.get('REDIS_URL'):
+REDIS_URL = os.environ.get('REDIS_URL')
+USE_REDIS = False
+
+if REDIS_URL:
+    # Test if Redis is reachable
+    try:
+        import redis
+        r = redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        r.ping()
+        USE_REDIS = True
+        print(f"✓ Redis connected successfully at {REDIS_URL[:30]}...")
+    except Exception as e:
+        print(f"✗ Redis connection failed: {e}")
+        print("→ Falling back to local memory cache")
+
+if USE_REDIS:
     # Production: Redis cache for scalability (1M+ users)
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-            'LOCATION': os.environ.get('REDIS_URL'),
+            'LOCATION': REDIS_URL,
             'TIMEOUT': 3600,  # 1 hour default
             'KEY_PREFIX': 'crednorth',
         }
     }
 else:
-    # Development: Local memory cache
+    # Development or Redis unavailable: Local memory cache
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -219,11 +234,11 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000  # Allow many fields in POST (for bulk adm
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
 # Session optimization for scale
-if os.environ.get('REDIS_URL'):
+if USE_REDIS:
     SESSION_ENGINE = 'django.contrib.sessions.backends.cache'  # Use Redis for sessions
     SESSION_CACHE_ALIAS = 'default'
 else:
-    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database sessions for dev
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database sessions
 
 # Logging configuration for production monitoring
 if not DEBUG:

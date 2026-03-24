@@ -4,6 +4,7 @@ import csv
 import uuid
 import io
 import time
+import re
 from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,6 +15,8 @@ from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Sum, Count, Q
 from django.core.cache import cache
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib import messages
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.db import transaction
@@ -791,6 +794,52 @@ class LenderDeleteView(LoginRequiredMixin, UserPassesTestMixin, View):
 
 class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
     """Validate CSV file for bulk upload"""
+
+    HEADER_ALIASES = {
+        'phone_number': ['phone_number', 'phone', 'mobile', 'mobile_number', 'contact', 'contact_number'],
+        'first_name': ['first_name', 'firstname', 'first'],
+        'last_name': ['last_name', 'lastname', 'surname', 'last'],
+        'email': ['email', 'email_id', 'mail'],
+        'pan_number': ['pan_number', 'pan', 'pan_no', 'pancard', 'pan_card'],
+        'date_of_birth': ['date_of_birth', 'dob', 'birth_date'],
+        'gender': ['gender', 'sex'],
+        'city': ['city', 'town'],
+        'state': ['state', 'province'],
+        'pin_code': ['pin_code', 'pincode', 'pin', 'zip', 'zipcode', 'postal_code'],
+        'monthly_income': ['monthly_income', 'income', 'salary', 'monthly_salary'],
+        'profession': ['profession', 'employment_type', 'occupation', 'job_type'],
+        'bureau_score': ['bureau_score', 'cibil', 'cibil_score', 'credit_score'],
+        'name': ['name', 'full_name', 'fullname'],
+    }
+
+    @staticmethod
+    def _normalize_header(header):
+        """Normalize incoming CSV headers for loose matching."""
+        if not header:
+            return ''
+        normalized = str(header).replace('\ufeff', '').strip().lower()
+        normalized = re.sub(r'[^a-z0-9]+', '_', normalized)
+        return normalized.strip('_')
+
+    @classmethod
+    def _build_header_lookup(cls, fieldnames):
+        """Map normalized headers to original headers."""
+        lookup = {}
+        for field in fieldnames or []:
+            normalized = cls._normalize_header(field)
+            if normalized and normalized not in lookup:
+                lookup[normalized] = field
+        return lookup
+
+    @classmethod
+    def _get_value(cls, row, header_lookup, canonical_key):
+        """Fetch a CSV value using canonical key aliases."""
+        aliases = cls.HEADER_ALIASES.get(canonical_key, [canonical_key])
+        for alias in aliases:
+            original_key = header_lookup.get(alias)
+            if original_key is not None:
+                return (row.get(original_key) or '').strip()
+        return ''
     
     def test_func(self):
         return self.request.user.is_staff or self.request.user.is_superuser
@@ -814,18 +863,23 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
             
             # Expected columns - only phone_number is mandatory
             required_columns = ['phone_number']
-            optional_columns = ['first_name', 'last_name', 'pan_number', 'pin_code', 'monthly_income', 
-                              'profession', 'date_of_birth', 'gender', 'email', 'city', 'state', 'bureau_score']
             
             # Check if required columns exist
             if not csv_reader.fieldnames:
                 return JsonResponse({'success': False, 'error': 'CSV file is empty'}, status=400)
-            
-            missing_columns = [col for col in required_columns if col not in csv_reader.fieldnames]
+
+            header_lookup = self._build_header_lookup(csv_reader.fieldnames)
+
+            missing_columns = []
+            for col in required_columns:
+                aliases = self.HEADER_ALIASES.get(col, [col])
+                if not any(alias in header_lookup for alias in aliases):
+                    missing_columns.append(col)
+
             if missing_columns:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Missing required columns: {", ".join(missing_columns)}'
+                    'error': f'Missing required columns: {", ".join(missing_columns)}. Accepted headers for phone_number: phone_number, phone, mobile'
                 }, status=400)
             
             # Validate rows
@@ -841,13 +895,11 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
                 row_errors = []
                 
                 # Check phone_number (the ONLY mandatory and validated field)
-                if not row.get('phone_number', '').strip():
+                phone = self._get_value(row, header_lookup, 'phone_number')
+                if not phone:
                     row_errors.append(f'Row {row_number}: Missing phone_number - SKIPPED')
                     errors.extend(row_errors)
                     continue
-                
-                # Get phone number
-                phone = row['phone_number'].strip()
                 
                 # Validate phone number format (10 digits)
                 if not phone.isdigit() or len(phone) != 10:
@@ -866,20 +918,33 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
                 
                 # Add row to valid rows - NO VALIDATION for any field except phone_number
                 # All other fields are optional and passed as-is
+                first_name = self._get_value(row, header_lookup, 'first_name')
+                last_name = self._get_value(row, header_lookup, 'last_name')
+
+                # If CSV has a single combined name field, split into first/last.
+                if not first_name and not last_name:
+                    full_name = self._get_value(row, header_lookup, 'name')
+                    if full_name:
+                        name_parts = full_name.split(None, 1)
+                        first_name = name_parts[0]
+                        last_name = name_parts[1] if len(name_parts) > 1 else ''
+
+                pan_number = self._get_value(row, header_lookup, 'pan_number').upper()
+
                 valid_rows.append({
                     'phone_number': phone,
-                    'first_name': row.get('first_name', '').strip(),
-                    'last_name': row.get('last_name', '').strip(),
-                    'pan_number': row.get('pan_number', '').strip().upper() if row.get('pan_number', '').strip() else '',
-                    'date_of_birth': row.get('date_of_birth', '').strip(),
-                    'gender': row.get('gender', '').strip(),
-                    'email': row.get('email', '').strip(),
-                    'city': row.get('city', '').strip(),
-                    'state': row.get('state', '').strip(),
-                    'pin_code': row.get('pin_code', '').strip(),
-                    'monthly_income': row.get('monthly_income', '').strip(),
-                    'profession': row.get('profession', '').strip(),
-                    'bureau_score': row.get('bureau_score', '').strip()
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'pan_number': pan_number,
+                    'date_of_birth': self._get_value(row, header_lookup, 'date_of_birth'),
+                    'gender': self._get_value(row, header_lookup, 'gender'),
+                    'email': self._get_value(row, header_lookup, 'email'),
+                    'city': self._get_value(row, header_lookup, 'city'),
+                    'state': self._get_value(row, header_lookup, 'state'),
+                    'pin_code': self._get_value(row, header_lookup, 'pin_code'),
+                    'monthly_income': self._get_value(row, header_lookup, 'monthly_income'),
+                    'profession': self._get_value(row, header_lookup, 'profession'),
+                    'bureau_score': self._get_value(row, header_lookup, 'bureau_score')
                 })
             
             if not valid_rows:
@@ -893,9 +958,16 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
             session_id = str(uuid.uuid4())
             
             # Store validated data in cache (expires in 1 hour)
-            cache.set(f'bulk_upload_{session_id}', {
-                'rows': valid_rows
-            }, 3600)
+            try:
+                cache.set(f'bulk_upload_{session_id}', {
+                    'rows': valid_rows
+                }, 3600)
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Cache service temporarily unavailable. Please try again.',
+                    'detail': str(e)
+                }, status=503)
             
             # Return success with preview data
             return JsonResponse({
@@ -928,7 +1000,14 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
             return JsonResponse({'success': False, 'error': 'No session ID provided'}, status=400)
         
         # Retrieve validated data from cache
-        cached_data = cache.get(f'bulk_upload_{session_id}')
+        try:
+            cached_data = cache.get(f'bulk_upload_{session_id}')
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': 'Cache service temporarily unavailable. Please try again.',
+                'detail': str(e)
+            }, status=503)
         
         if not cached_data:
             return JsonResponse({
@@ -942,15 +1021,18 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
             total_batches = (total_rows + self.BATCH_SIZE - 1) // self.BATCH_SIZE  # Calculate total batches
             
             # Initialize progress tracking
-            cache.set(f'upload_progress_{session_id}', {
-                'total_rows': total_rows,
-                'processed_rows': 0,
-                'current_batch': 0,
-                'total_batches': total_batches,
-                'created_count': 0,
-                'updated_count': 0,
-                'status': 'processing'
-            }, timeout=3600)
+            try:
+                cache.set(f'upload_progress_{session_id}', {
+                    'total_rows': total_rows,
+                    'processed_rows': 0,
+                    'current_batch': 0,
+                    'total_batches': total_batches,
+                    'created_count': 0,
+                    'updated_count': 0,
+                    'status': 'processing'
+                }, timeout=3600)
+            except Exception:
+                pass  # Continue processing even if progress tracking fails
             
             # Process in batches to avoid timeout
             created_count = 0
@@ -983,29 +1065,38 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                             raise  # Re-raise if not a lock error or max retries reached
                 
                 # Update progress after processing batch
+                try:
+                    cache.set(f'upload_progress_{session_id}', {
+                        'total_rows': total_rows,
+                        'processed_rows': batch_end,
+                        'current_batch': batch_number,
+                        'total_batches': total_batches,
+                        'created_count': created_count,
+                        'updated_count': updated_count,
+                        'status': 'processing'
+                    }, timeout=3600)
+                except Exception:
+                    pass  # Continue even if progress update fails
+            
+            # Mark as complete
+            try:
                 cache.set(f'upload_progress_{session_id}', {
                     'total_rows': total_rows,
-                    'processed_rows': batch_end,
-                    'current_batch': batch_number,
+                    'processed_rows': total_rows,
+                    'current_batch': total_batches,
                     'total_batches': total_batches,
                     'created_count': created_count,
                     'updated_count': updated_count,
-                    'status': 'processing'
+                    'status': 'completed'
                 }, timeout=3600)
-            
-            # Mark as complete
-            cache.set(f'upload_progress_{session_id}', {
-                'total_rows': total_rows,
-                'processed_rows': total_rows,
-                'current_batch': total_batches,
-                'total_batches': total_batches,
-                'created_count': created_count,
-                'updated_count': updated_count,
-                'status': 'completed'
-            }, timeout=3600)
+            except Exception:
+                pass  # Progress tracking failure shouldn't affect final result
             
             # Clear upload data cache
-            cache.delete(f'bulk_upload_{session_id}')
+            try:
+                cache.delete(f'bulk_upload_{session_id}')
+            except Exception:
+                pass  # Not critical if cache deletion fails
             
             response_data = {
                 'success': True,
@@ -1026,6 +1117,23 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
         """Process a batch of rows and return counts"""
         created_count = 0
         updated_count = 0
+
+        valid_genders = {'Male', 'Female', 'Other'}
+        gender_map = {
+            'm': 'Male',
+            'male': 'Male',
+            'f': 'Female',
+            'female': 'Female',
+            'o': 'Other',
+            'other': 'Other',
+        }
+        valid_professions = {'Salaried', 'Self-Employed', 'Business'}
+        profession_map = {
+            'salaried': 'Salaried',
+            'self employed': 'Self-Employed',
+            'self-employed': 'Self-Employed',
+            'business': 'Business',
+        }
         
         for row in batch_rows:
             phone_number = row['phone_number']
@@ -1050,8 +1158,36 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
             if row.get('bureau_score', '').strip():
                 try:
                     bureau_score_value = int(row['bureau_score'])
+                    if bureau_score_value < 0 or bureau_score_value > 900:
+                        bureau_score_value = None
                 except:
                     bureau_score_value = None
+
+            # Skip invalid email instead of blocking upload
+            email_value = ''
+            raw_email = row.get('email', '').strip()
+            if raw_email:
+                try:
+                    validate_email(raw_email)
+                    email_value = raw_email
+                except DjangoValidationError:
+                    email_value = ''
+
+            # Normalize/validate gender
+            gender_value = ''
+            raw_gender = row.get('gender', '').strip()
+            if raw_gender:
+                mapped_gender = gender_map.get(raw_gender.lower(), raw_gender)
+                if mapped_gender in valid_genders:
+                    gender_value = mapped_gender
+
+            # Normalize/validate profession
+            profession_value = ''
+            raw_profession = row.get('profession', '').strip()
+            if raw_profession:
+                mapped_profession = profession_map.get(raw_profession.lower(), raw_profession)
+                if mapped_profession in valid_professions:
+                    profession_value = mapped_profession
             
             # Clean PAN number
             pan_number_value = ''
@@ -1081,13 +1217,16 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                 if row.get('last_name', '').strip():
                     existing_user.last_name = row['last_name']
                 if pan_number_value:
-                    existing_user.pan_number = pan_number_value
+                    # PAN is optional; skip if already used by another user
+                    pan_in_use = User.objects.filter(pan_number=pan_number_value).exclude(pk=existing_user.pk).exists()
+                    if not pan_in_use:
+                        existing_user.pan_number = pan_number_value
                 if date_of_birth_value:
                     existing_user.date_of_birth = date_of_birth_value
-                if row.get('gender', '').strip():
-                    existing_user.gender = row['gender']
-                if row.get('email', '').strip():
-                    existing_user.email = row['email']
+                if gender_value:
+                    existing_user.gender = gender_value
+                if email_value:
+                    existing_user.email = email_value
                 if row.get('city', '').strip():
                     existing_user.city = row['city']
                 if row.get('state', '').strip():
@@ -1096,8 +1235,8 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                     existing_user.pin_code = pin_code_value
                 if monthly_income_value is not None:
                     existing_user.monthly_income = monthly_income_value
-                if row.get('profession', '').strip():
-                    existing_user.profession = row['profession']
+                if profession_value:
+                    existing_user.profession = profession_value
                 if bureau_score_value is not None:
                     existing_user.bureau_score = bureau_score_value
                 
@@ -1106,19 +1245,23 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                 
             except User.DoesNotExist:
                 # Create new user
+                create_pan_value = pan_number_value
+                if create_pan_value and User.objects.filter(pan_number=create_pan_value).exists():
+                    create_pan_value = ''
+
                 User.objects.create(
                     phone_number=phone_number,
                     first_name=row.get('first_name', ''),
                     last_name=row.get('last_name', ''),
-                    pan_number=pan_number_value,
+                    pan_number=create_pan_value,
                     date_of_birth=date_of_birth_value,
-                    gender=row.get('gender', ''),
-                    email=row.get('email', ''),
+                    gender=gender_value,
+                    email=email_value,
                     city=row.get('city', ''),
                     state=row.get('state', ''),
                     pin_code=pin_code_value,
                     monthly_income=monthly_income_value,
-                    profession=row.get('profession', ''),
+                    profession=profession_value,
                     bureau_score=bureau_score_value,
                     status='pending'
                 )
@@ -1139,7 +1282,15 @@ class UploadProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
         if not session_id:
             return JsonResponse({'success': False, 'error': 'No session ID provided'}, status=400)
         
-        progress_data = cache.get(f'upload_progress_{session_id}')
+        try:
+            progress_data = cache.get(f'upload_progress_{session_id}')
+        except Exception as e:
+            # Handle cache connection errors gracefully
+            return JsonResponse({
+                'success': False,
+                'error': 'Cache temporarily unavailable',
+                'detail': str(e)
+            }, status=503)
         
         if not progress_data:
             return JsonResponse({
