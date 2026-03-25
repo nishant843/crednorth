@@ -1019,10 +1019,12 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
             rows = cached_data['rows']
             total_rows = len(rows)
             total_batches = (total_rows + self.BATCH_SIZE - 1) // self.BATCH_SIZE  # Calculate total batches
-            
-            # Initialize progress tracking
-            try:
-                cache.set(f'upload_progress_{session_id}', {
+
+            # Resume progress across multiple requests (one batch per request)
+            progress_key = f'upload_progress_{session_id}'
+            progress = cache.get(progress_key)
+            if not progress:
+                progress = {
                     'total_rows': total_rows,
                     'processed_rows': 0,
                     'current_batch': 0,
@@ -1030,82 +1032,76 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                     'created_count': 0,
                     'updated_count': 0,
                     'status': 'processing'
-                }, timeout=3600)
-            except Exception:
-                pass  # Continue processing even if progress tracking fails
-            
-            # Process in batches to avoid timeout
-            created_count = 0
-            updated_count = 0
-            batch_number = 0
-            
-            # Process rows in batches with transaction per batch
-            for batch_start in range(0, total_rows, self.BATCH_SIZE):
-                batch_number += 1
-                batch_end = min(batch_start + self.BATCH_SIZE, total_rows)
-                batch_rows = rows[batch_start:batch_end]
-                
-                # Process each batch with retry logic for database locks
-                max_retries = 3
-                retry_delay = 0.5
-                
-                for attempt in range(max_retries):
-                    try:
-                        with transaction.atomic():
-                            batch_created, batch_updated = self._process_batch(batch_rows)
-                            created_count += batch_created
-                            updated_count += batch_updated
-                        break  # Success, exit retry loop
-                    except Exception as e:
-                        error_msg = str(e).lower()
-                        if 'database is locked' in error_msg and attempt < max_retries - 1:
-                            time.sleep(retry_delay * (2 ** attempt))
-                            continue
-                        else:
-                            raise  # Re-raise if not a lock error or max retries reached
-                
-                # Update progress after processing batch
-                try:
-                    cache.set(f'upload_progress_{session_id}', {
-                        'total_rows': total_rows,
-                        'processed_rows': batch_end,
-                        'current_batch': batch_number,
-                        'total_batches': total_batches,
-                        'created_count': created_count,
-                        'updated_count': updated_count,
-                        'status': 'processing'
-                    }, timeout=3600)
-                except Exception:
-                    pass  # Continue even if progress update fails
-            
-            # Mark as complete
-            try:
-                cache.set(f'upload_progress_{session_id}', {
-                    'total_rows': total_rows,
-                    'processed_rows': total_rows,
-                    'current_batch': total_batches,
-                    'total_batches': total_batches,
+                }
+
+            processed_rows = int(progress.get('processed_rows', 0))
+            created_count = int(progress.get('created_count', 0))
+            updated_count = int(progress.get('updated_count', 0))
+
+            # If already completed (duplicate request), return final state.
+            if processed_rows >= total_rows:
+                progress['status'] = 'completed'
+                cache.set(progress_key, progress, timeout=3600)
+                return JsonResponse({
+                    'success': True,
+                    'completed': True,
                     'created_count': created_count,
                     'updated_count': updated_count,
-                    'status': 'completed'
-                }, timeout=3600)
-            except Exception:
-                pass  # Progress tracking failure shouldn't affect final result
-            
-            # Clear upload data cache
-            try:
-                cache.delete(f'bulk_upload_{session_id}')
-            except Exception:
-                pass  # Not critical if cache deletion fails
-            
-            response_data = {
-                'success': True,
+                    'progress': progress,
+                    'message': f'Created {created_count} new leads, Updated {updated_count} existing leads'
+                })
+
+            batch_start = processed_rows
+            batch_end = min(batch_start + self.BATCH_SIZE, total_rows)
+            batch_rows = rows[batch_start:batch_end]
+
+            # Process current batch with retry logic for DB locks
+            max_retries = 3
+            retry_delay = 0.5
+            batch_created = 0
+            batch_updated = 0
+
+            for attempt in range(max_retries):
+                try:
+                    with transaction.atomic():
+                        batch_created, batch_updated = self._process_batch(batch_rows)
+                    break
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if 'database is locked' in error_msg and attempt < max_retries - 1:
+                        time.sleep(retry_delay * (2 ** attempt))
+                        continue
+                    raise
+
+            created_count += batch_created
+            updated_count += batch_updated
+
+            progress = {
+                'total_rows': total_rows,
+                'processed_rows': batch_end,
+                'current_batch': (batch_end + self.BATCH_SIZE - 1) // self.BATCH_SIZE,
+                'total_batches': total_batches,
                 'created_count': created_count,
                 'updated_count': updated_count,
-                'message': f'Created {created_count} new leads, Updated {updated_count} existing leads'
+                'status': 'completed' if batch_end >= total_rows else 'processing'
             }
-            
-            return JsonResponse(response_data)
+            cache.set(progress_key, progress, timeout=3600)
+
+            # Clear staged upload rows once completed
+            if progress['status'] == 'completed':
+                try:
+                    cache.delete(f'bulk_upload_{session_id}')
+                except Exception:
+                    pass
+
+            return JsonResponse({
+                'success': True,
+                'completed': progress['status'] == 'completed',
+                'created_count': created_count,
+                'updated_count': updated_count,
+                'progress': progress,
+                'message': f'Created {created_count} new leads, Updated {updated_count} existing leads'
+            })
             
         except Exception as e:
             return JsonResponse({
