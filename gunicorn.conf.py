@@ -11,12 +11,12 @@ worker_class = 'sync'
 
 # Timeout configuration - CRITICAL for bulk uploads
 timeout = 300  # 5 minutes for processing large uploads
-graceful_timeout = 30
+graceful_timeout = 300
 keepalive = 5
 
 # Request limits
-max_requests = 1000
-max_requests_jitter = 50
+max_requests = 2000
+max_requests_jitter = 200
 
 # Logging
 accesslog = '-'
