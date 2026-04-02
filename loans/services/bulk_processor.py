@@ -5,6 +5,8 @@ Handles CSV validation, row processing, and result generation.
 
 import csv
 import io
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 from .lender_call import process_lender
 
@@ -106,25 +108,54 @@ def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send
     Returns:
         List of result dictionaries
     """
-    results = []
-    
+    tasks = []
     for row_num, row in enumerate(rows, start=1):
         for lender in lenders:
-            lender_result = process_lender(lender, row, check_dedupe, send_leads)
-            
-            result_row = {
-                'row_number': row_num,
-                'lender': lender,
-                'status': lender_result.get('status', ''),
-                'result': lender_result.get('result', ''),
-                'lead_id': lender_result.get('lead_id', ''),
-                'utm_link': lender_result.get('utm_link', ''),
-                'message': lender_result.get('message', '')
-            }
-            
-            results.append(result_row)
-    
-    return results
+            tasks.append((row_num, lender, row))
+
+    if not tasks:
+        return []
+
+    # Dedupe and lead creation calls are network-bound; use threads for throughput.
+    max_workers = min(32, len(tasks), max(4, (os.cpu_count() or 1) * 5))
+    ordered_results: list[dict | None] = [None] * len(tasks)
+
+    def _run_task(task_index: int, row_num: int, lender: str, row: dict):
+        lender_result = process_lender(lender, row, check_dedupe, send_leads)
+        return task_index, {
+            'row_number': row_num,
+            'lender': lender,
+            'status': lender_result.get('status', ''),
+            'result': lender_result.get('result', ''),
+            'lead_id': lender_result.get('lead_id', ''),
+            'utm_link': lender_result.get('utm_link', ''),
+            'message': lender_result.get('message', '')
+        }
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_index = {
+            executor.submit(_run_task, idx, row_num, lender, row): idx
+            for idx, (row_num, lender, row) in enumerate(tasks)
+        }
+
+        for future in as_completed(future_to_index):
+            idx = future_to_index[future]
+            row_num, lender, _ = tasks[idx]
+            try:
+                task_index, result_row = future.result()
+                ordered_results[task_index] = result_row
+            except Exception as exc:
+                ordered_results[idx] = {
+                    'row_number': row_num,
+                    'lender': lender,
+                    'status': 'FAILED',
+                    'result': 'PROCESSING_ERROR',
+                    'lead_id': '',
+                    'utm_link': '',
+                    'message': str(exc)
+                }
+
+    return [r for r in ordered_results if r is not None]
 
 
 def _clean_value(value: str) -> str | None:
