@@ -1,7 +1,6 @@
 from django.urls import path
 from .views import DedupeAdminView
 from .views_admin import (
-    BulkDedupeAPIView, 
     CRMDashboardView,
     CRMLendersView,
     CRMFetchDataView,
@@ -20,7 +19,6 @@ from .views_bulk_management import (
 )
 
 urlpatterns = [
-    path('admin/bulk-dedupe/', BulkDedupeAPIView.as_view()),
     path('admin-crm-dashboard/', CRMDashboardView.as_view(), name='crm_dashboard'),
     path('admin-crm-dashboard/users/', CRMDashboardView.as_view(), name='crm_users'),
     path('admin-crm-dashboard/lenders/', CRMLendersView.as_view(), name='crm_lenders'),

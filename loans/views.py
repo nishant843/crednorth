@@ -1,10 +1,14 @@
 from django.shortcuts import render, redirect
 from django.views import View
+from django.http import FileResponse, JsonResponse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib import messages
 import os
+import tempfile
+from loans.services.bulk_processor import process_csv
 
 
 # Custom Error Handlers
@@ -89,7 +93,56 @@ class ProfileView(View):
 
 
 @method_decorator(login_required, name='dispatch')
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class DedupeAdminView(View):
     """Dedupe admin view - accessible to all authenticated users"""
     def get(self, request):
         return render(request, 'dedupe_admin.html')
+
+
+@method_decorator(login_required, name='dispatch')
+class BulkDedupeProcessView(View):
+    """Handle bulk dedupe processing via standard Django view (non-DRF)."""
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        lenders = request.POST.getlist('lenders')
+        check_dedupe = request.POST.get('check_dedupe', 'false').lower() == 'true'
+        send_leads = request.POST.get('send_leads', 'false').lower() == 'true'
+
+        if not uploaded_file:
+            return JsonResponse({'error': 'No file provided'}, status=400)
+
+        if not lenders:
+            return JsonResponse({'error': 'No lenders selected'}, status=400)
+
+        input_fd, input_path = tempfile.mkstemp(suffix='.csv')
+        output_fd, output_path = tempfile.mkstemp(suffix='.csv')
+
+        try:
+            with os.fdopen(input_fd, 'wb') as input_file:
+                for chunk in uploaded_file.chunks():
+                    input_file.write(chunk)
+
+            os.close(output_fd)
+
+            try:
+                process_csv(input_path, output_path, lenders, check_dedupe, send_leads)
+            except ValueError as exc:
+                return JsonResponse({'error': str(exc)}, status=400)
+            except Exception:
+                return JsonResponse({'error': 'Processing failed'}, status=400)
+
+            return FileResponse(
+                open(output_path, 'rb'),
+                as_attachment=True,
+                filename='bulk_dedupe_results.csv'
+            )
+
+        except Exception:
+            return JsonResponse({'error': 'File processing failed'}, status=400)
+        finally:
+            if os.path.exists(input_path):
+                try:
+                    os.unlink(input_path)
+                except Exception:
+                    pass

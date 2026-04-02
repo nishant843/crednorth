@@ -4,6 +4,7 @@ Handles CSV validation, row processing, and result generation.
 """
 
 import csv
+import io
 from typing import List
 from .lender_call import process_lender
 
@@ -48,28 +49,48 @@ def _read_and_validate_csv(csv_path: str) -> List[dict]:
         ValueError: If CSV doesn't contain required columns
         FileNotFoundError: If file doesn't exist
     """
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
+    with open(csv_path, 'rb') as f:
+        raw_bytes = f.read()
+
+    decoded_csv = None
+    for encoding in ('utf-8-sig', 'utf-8', 'utf-16'):
+        try:
+            decoded_csv = raw_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if decoded_csv is None:
+        raise ValueError(
+            "CSV encoding not supported. Please save file as UTF-8 or UTF-16 and try again."
+        )
+
+    reader = csv.DictReader(io.StringIO(decoded_csv))
         
-        if not reader.fieldnames:
-            raise ValueError("CSV file is empty or has no headers")
+    if not reader.fieldnames:
+        raise ValueError("CSV file is empty or has no headers")
         
-        headers = [h.strip() for h in reader.fieldnames]
+    headers = [h.strip() for h in reader.fieldnames]
         
-        has_phone = 'phoneNumber' in headers or 'phonenumber' in headers or 'mobile' in headers
-        has_pan = 'pan' in headers
+    has_phone = 'phoneNumber' in headers or 'phonenumber' in headers or 'mobile' in headers
+    has_pan = 'pan' in headers
         
-        if not has_phone and not has_pan:
-            raise ValueError(
-                "CSV must contain at least one of these columns: 'phoneNumber' or 'pan'"
-            )
+    if not has_phone and not has_pan:
+        raise ValueError(
+            "CSV must contain at least one of these columns: 'phoneNumber' or 'pan'"
+        )
         
-        rows = []
-        for row in reader:
-            normalized_row = {k.strip(): v for k, v in row.items()}
-            rows.append(normalized_row)
+    rows = []
+    for row in reader:
+        normalized_row = {}
+        for key, value in row.items():
+            # DictReader uses key=None for extra columns in malformed rows.
+            if key is None:
+                continue
+            normalized_row[str(key).strip()] = value
+        rows.append(normalized_row)
         
-        return rows
+    return rows
 
 
 def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send_leads: bool) -> List[dict]:
