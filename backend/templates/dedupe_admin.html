@@ -19,7 +19,6 @@
             line-height: 1.6;
         }
 
-        /* Navigation Bar */
         .navbar {
             background: #1a1a2e;
             border-bottom: 1px solid #2a2a3e;
@@ -128,7 +127,6 @@
             background: #dc2626;
         }
 
-        /* Main Content */
         .container {
             max-width: 900px;
             margin: 0 auto;
@@ -371,7 +369,6 @@
             display: block;
         }
 
-        /* Responsive */
         @media (max-width: 768px) {
             .nav-container {
                 flex-direction: column;
@@ -396,7 +393,6 @@
     </style>
 </head>
 <body>
-    <!-- Navigation Bar -->
     <nav class="navbar">
         <div class="nav-container">
             <a href="/" class="nav-brand">
@@ -425,18 +421,15 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
     <div class="container">
         <h1>🔄 Lead Processing Tool</h1>
 
-        <!-- STEP 1: DEDUPE CHECK SECTION -->
         <div class="function-section dedupe-section">
             <div class="function-title">Step 1: Check for Duplicates</div>
             <div class="function-description">
                 Upload your CSV to check which leads already exist with the lender
             </div>
 
-            <!-- CSV Upload -->
             <div class="section">
                 <div class="section-title">CSV Upload</div>
                 <div class="file-input-wrapper">
@@ -448,7 +441,6 @@
                 <div class="error-message" id="fileError">Please select a valid CSV file</div>
             </div>
 
-            <!-- Lender Selection -->
             <div class="section">
                 <div class="section-title">Lender Selection</div>
                 <div class="checkbox-group">
@@ -459,12 +451,10 @@
                 </div>
             </div>
 
-            <!-- Action Button -->
             <div class="section">
                 <button class="action-button" id="dedupeButton" disabled>Check Duplicates</button>
             </div>
 
-            <!-- Status Section -->
             <div class="section">
                 <div class="section-title">Dedupe Status</div>
                 <div class="status-container">
@@ -474,26 +464,22 @@
             </div>
         </div>
 
-        <!-- STEP 2: LEAD PUSH SECTION -->
         <div class="function-section lead-section">
             <div class="function-title">Step 2: Push Non-Duplicate Leads</div>
             <div class="function-description">
                 Push only the leads that were NOT found as duplicates to the lender
             </div>
 
-            <!-- Info Section -->
             <div class="section">
                 <div class="hint-text" style="border-left-color: #48bb78;">
                     This will automatically push only the leads marked as "NOT_DUPLICATE" from your dedupe check above.
                 </div>
             </div>
 
-            <!-- Action Button -->
             <div class="section">
                 <button class="action-button lead-button" id="pushButton" disabled>Push Non-Duplicate Leads</button>
             </div>
 
-            <!-- Status Section -->
             <div class="section">
                 <div class="section-title">Push Status</div>
                 <div class="status-container">
@@ -505,26 +491,34 @@
     </div>
 
     <script>
-        // Global state
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                return parts.pop().split(';').shift();
+            }
+            return '';
+        }
+
+        const csrfToken = getCookie('csrftoken');
+
         let selectedFile = null;
         let selectedLender = null;
         let dedupeResultBlob = null;
         let pushResultBlob = null;
 
-        // DOM elements
         const csvFileInput = document.getElementById('csvFile');
         const lender1Checkbox = document.getElementById('lender1');
         const fileError = document.getElementById('fileError');
-        
+
         const dedupeButton = document.getElementById('dedupeButton');
         const dedupeStatusText = document.getElementById('dedupeStatusText');
         const dedupeDownloadButton = document.getElementById('dedupeDownloadButton');
-        
+
         const pushButton = document.getElementById('pushButton');
         const pushStatusText = document.getElementById('pushStatusText');
         const pushDownloadButton = document.getElementById('pushDownloadButton');
 
-        // Validation
         function validateCSVFile(file) {
             if (!file) return false;
             const fileName = file.name.toLowerCase();
@@ -542,7 +536,6 @@
             dedupeButton.disabled = !(hasFile && hasLender);
         }
 
-        // Event listeners
         csvFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file && validateCSVFile(file)) {
@@ -552,8 +545,7 @@
                 csvFileInput.value = '';
             }
             checkFormValidity();
-            
-            // Reset state when new file is uploaded
+
             dedupeResultBlob = null;
             pushResultBlob = null;
             pushButton.disabled = true;
@@ -570,27 +562,29 @@
             checkFormValidity();
         });
 
-        // Step 1: Dedupe Check
         dedupeButton.addEventListener('click', async () => {
             dedupeButton.disabled = true;
             dedupeDownloadButton.disabled = true;
             pushButton.disabled = true;
-            
+
             dedupeStatusText.textContent = 'Checking for duplicates...';
             dedupeStatusText.className = 'status-text processing';
-            
+
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('lenders', selectedLender);
             formData.append('check_dedupe', 'true');
             formData.append('send_leads', 'false');
-            
+
             try {
-                const response = await fetch('/api/admin/bulk-dedupe/', {
+                const response = await fetch('/depupeleadsztv/process/', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    }
                 });
-                
+
                 if (!response.ok) {
                     const errorData = await response.json();
                     dedupeStatusText.textContent = `Error: ${errorData.error || 'Processing failed'}`;
@@ -598,19 +592,18 @@
                     dedupeButton.disabled = false;
                     return;
                 }
-                
+
                 dedupeResultBlob = await response.blob();
-                
+
                 dedupeStatusText.textContent = 'Dedupe check completed';
                 dedupeStatusText.className = 'status-text completed';
                 dedupeDownloadButton.disabled = false;
                 dedupeButton.disabled = false;
-                
-                // Enable step 2
+
                 pushButton.disabled = false;
                 pushStatusText.textContent = 'Ready to push non-duplicate leads';
                 pushStatusText.className = 'status-text';
-                
+
             } catch (error) {
                 dedupeStatusText.textContent = 'Error: Network or server error';
                 dedupeStatusText.className = 'status-text error';
@@ -630,26 +623,28 @@
             window.URL.revokeObjectURL(url);
         });
 
-        // Step 2: Push Non-Duplicates
         pushButton.addEventListener('click', async () => {
             pushButton.disabled = true;
             pushDownloadButton.disabled = true;
-            
+
             pushStatusText.textContent = 'Pushing non-duplicate leads...';
             pushStatusText.className = 'status-text processing';
-            
+
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('lenders', selectedLender);
             formData.append('check_dedupe', 'true');
             formData.append('send_leads', 'true');
-            
+
             try {
-                const response = await fetch('/api/admin/bulk-dedupe/', {
+                const response = await fetch('/depupeleadsztv/process/', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    }
                 });
-                
+
                 if (!response.ok) {
                     const errorData = await response.json();
                     pushStatusText.textContent = `Error: ${errorData.error || 'Processing failed'}`;
@@ -657,14 +652,14 @@
                     pushButton.disabled = false;
                     return;
                 }
-                
+
                 pushResultBlob = await response.blob();
-                
+
                 pushStatusText.textContent = 'Lead push completed';
                 pushStatusText.className = 'status-text completed';
                 pushDownloadButton.disabled = false;
                 pushButton.disabled = false;
-                
+
             } catch (error) {
                 pushStatusText.textContent = 'Error: Network or server error';
                 pushStatusText.className = 'status-text error';

@@ -1,6 +1,5 @@
 from django.urls import path
 from .views import (
-    BulkDedupeAPIView,
     CRMDashboardView,
     CRMLendersView,
     CRMFetchDataView,
@@ -27,9 +26,6 @@ urlpatterns = [
     path('users/', CRMDashboardView.as_view(), name='users'),
     path('lenders/', CRMLendersView.as_view(), name='lenders'),
     path('fetch-data/', CRMFetchDataView.as_view(), name='fetch_data'),
-    
-    # Bulk operations
-    path('bulk-dedupe/', BulkDedupeAPIView.as_view(), name='bulk_dedupe'),
     
     # Lead operations
     path('leads/create/', LeadCreateView.as_view(), name='lead_create'),

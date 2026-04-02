@@ -1,10 +1,7 @@
 import os
 import tempfile
 import csv
-import uuid
 import io
-import time
-import re
 from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,78 +11,12 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Sum, Count, Q
-from django.core.cache import cache
-from django.core.validators import validate_email
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib import messages
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
-from django.db import transaction
-from loans.services.bulk_processor import process_csv
 from users.models import User
 from lenders.models import Lender
-
-
-class BulkDedupeAPIView(APIView):
-    def post(self, request):
-        uploaded_file = request.FILES.get('file')
-        lenders = request.POST.getlist('lenders')
-        check_dedupe = request.POST.get('check_dedupe', 'false').lower() == 'true'
-        send_leads = request.POST.get('send_leads', 'false').lower() == 'true'
-        
-        if not uploaded_file:
-            return Response(
-                {'error': 'No file provided'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if not lenders:
-            return Response(
-                {'error': 'No lenders selected'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        input_fd, input_path = tempfile.mkstemp(suffix='.csv')
-        output_fd, output_path = tempfile.mkstemp(suffix='.csv')
-        
-        try:
-            with os.fdopen(input_fd, 'wb') as input_file:
-                for chunk in uploaded_file.chunks():
-                    input_file.write(chunk)
-            
-            os.close(output_fd)
-            
-            try:
-                process_csv(input_path, output_path, lenders, check_dedupe, send_leads)
-            except ValueError as e:
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            except Exception as e:
-                return Response(
-                    {'error': 'Processing failed'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            response = FileResponse(
-                open(output_path, 'rb'),
-                as_attachment=True,
-                filename='bulk_dedupe_results.csv'
-            )
-            
-            return response
-            
-        except Exception as e:
-            return Response(
-                {'error': 'File processing failed'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        finally:
-            if os.path.exists(input_path):
-                try:
-                    os.unlink(input_path)
-                except:
-                    pass
+from crm_admin.models import UploadJob
+from crm_admin.tasks import process_csv_upload
 
 
 class CRMDashboardView(LoginRequiredMixin, UserPassesTestMixin, View):
@@ -793,510 +724,120 @@ class LenderDeleteView(LoginRequiredMixin, UserPassesTestMixin, View):
 
 
 class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Validate CSV file for bulk upload"""
+    """Validate CSV headers and size without storing rows in cache."""
 
-    HEADER_ALIASES = {
-        'phone_number': ['phone_number', 'phone', 'mobile', 'mobile_number', 'contact', 'contact_number'],
-        'first_name': ['first_name', 'firstname', 'first'],
-        'last_name': ['last_name', 'lastname', 'surname', 'last'],
-        'email': ['email', 'email_id', 'mail'],
-        'pan_number': ['pan_number', 'pan', 'pan_no', 'pancard', 'pan_card'],
-        'date_of_birth': ['date_of_birth', 'dob', 'birth_date'],
-        'gender': ['gender', 'sex'],
-        'city': ['city', 'town'],
-        'state': ['state', 'province'],
-        'pin_code': ['pin_code', 'pincode', 'pin', 'zip', 'zipcode', 'postal_code'],
-        'monthly_income': ['monthly_income', 'income', 'salary', 'monthly_salary'],
-        'profession': ['profession', 'employment_type', 'occupation', 'job_type'],
-        'bureau_score': ['bureau_score', 'cibil', 'cibil_score', 'credit_score'],
-        'name': ['name', 'full_name', 'fullname'],
-    }
+    PHONE_ALIASES = {'phone_number', 'phone', 'mobile', 'mobile_number', 'contact', 'contact_number'}
 
-    @staticmethod
-    def _normalize_header(header):
-        """Normalize incoming CSV headers for loose matching."""
-        if not header:
-            return ''
-        normalized = str(header).replace('\ufeff', '').strip().lower()
-        normalized = re.sub(r'[^a-z0-9]+', '_', normalized)
-        return normalized.strip('_')
-
-    @classmethod
-    def _build_header_lookup(cls, fieldnames):
-        """Map normalized headers to original headers."""
-        lookup = {}
-        for field in fieldnames or []:
-            normalized = cls._normalize_header(field)
-            if normalized and normalized not in lookup:
-                lookup[normalized] = field
-        return lookup
-
-    @classmethod
-    def _get_value(cls, row, header_lookup, canonical_key):
-        """Fetch a CSV value using canonical key aliases."""
-        aliases = cls.HEADER_ALIASES.get(canonical_key, [canonical_key])
-        for alias in aliases:
-            original_key = header_lookup.get(alias)
-            if original_key is not None:
-                return (row.get(original_key) or '').strip()
-        return ''
-    
     def test_func(self):
         return self.request.user.is_staff or self.request.user.is_superuser
-    
+
     def post(self, request):
+        return JsonResponse({
+            'success': False,
+            'error': 'UI bulk upload is temporarily disabled. Use: python manage.py import_leads <file_path>'
+        }, status=503)
+
         uploaded_file = request.FILES.get('file')
-        
         if not uploaded_file:
             return JsonResponse({'success': False, 'error': 'No file provided'}, status=400)
-        
+
         try:
-            # Read and decode CSV
-            try:
-                decoded_file = uploaded_file.read().decode('utf-8').splitlines()
-            except UnicodeDecodeError:
-                # Try with different encoding
-                uploaded_file.seek(0)
-                decoded_file = uploaded_file.read().decode('utf-8-sig').splitlines()
-            
+            decoded_file = uploaded_file.read().decode('utf-8-sig').splitlines()
             csv_reader = csv.DictReader(decoded_file)
-            
-            # Expected columns - only phone_number is mandatory
-            required_columns = ['phone_number']
-            
-            # Check if required columns exist
             if not csv_reader.fieldnames:
                 return JsonResponse({'success': False, 'error': 'CSV file is empty'}, status=400)
 
-            header_lookup = self._build_header_lookup(csv_reader.fieldnames)
-
-            missing_columns = []
-            for col in required_columns:
-                aliases = self.HEADER_ALIASES.get(col, [col])
-                if not any(alias in header_lookup for alias in aliases):
-                    missing_columns.append(col)
-
-            if missing_columns:
+            normalized_headers = {
+                ''.join(ch if ch.isalnum() else '_' for ch in header.lower()).strip('_')
+                for header in csv_reader.fieldnames
+                if header
+            }
+            has_phone = any(alias in normalized_headers for alias in self.PHONE_ALIASES)
+            if not has_phone:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Missing required columns: {", ".join(missing_columns)}. Accepted headers for phone_number: phone_number, phone, mobile'
+                    'error': 'Missing required phone column. Accepted: phone_number, phone, mobile'
                 }, status=400)
-            
-            # Validate rows
-            valid_rows = []
-            errors = []
-            row_number = 1
-            
-            # Track duplicates within the CSV itself
-            csv_phones = set()
-            
-            for row in csv_reader:
-                row_number += 1
-                row_errors = []
-                
-                # Check phone_number (the ONLY mandatory and validated field)
-                phone = self._get_value(row, header_lookup, 'phone_number')
-                if not phone:
-                    row_errors.append(f'Row {row_number}: Missing phone_number - SKIPPED')
-                    errors.extend(row_errors)
-                    continue
-                
-                # Validate phone number format (10 digits)
-                if not phone.isdigit() or len(phone) != 10:
-                    row_errors.append(f'Row {row_number}: Invalid phone number format (must be 10 digits) - SKIPPED')
-                    errors.extend(row_errors)
-                    continue
-                
-                # Check for duplicates within the CSV
-                if phone in csv_phones:
-                    row_errors.append(f'Row {row_number}: Duplicate phone number {phone} in CSV - SKIPPED')
-                    errors.extend(row_errors)
-                    continue
-                
-                # Track phone to check for duplicates within CSV
-                csv_phones.add(phone)
-                
-                # Add row to valid rows - NO VALIDATION for any field except phone_number
-                # All other fields are optional and passed as-is
-                first_name = self._get_value(row, header_lookup, 'first_name')
-                last_name = self._get_value(row, header_lookup, 'last_name')
 
-                # If CSV has a single combined name field, split into first/last.
-                if not first_name and not last_name:
-                    full_name = self._get_value(row, header_lookup, 'name')
-                    if full_name:
-                        name_parts = full_name.split(None, 1)
-                        first_name = name_parts[0]
-                        last_name = name_parts[1] if len(name_parts) > 1 else ''
-
-                pan_number = self._get_value(row, header_lookup, 'pan_number').upper()
-
-                valid_rows.append({
-                    'phone_number': phone,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'pan_number': pan_number,
-                    'date_of_birth': self._get_value(row, header_lookup, 'date_of_birth'),
-                    'gender': self._get_value(row, header_lookup, 'gender'),
-                    'email': self._get_value(row, header_lookup, 'email'),
-                    'city': self._get_value(row, header_lookup, 'city'),
-                    'state': self._get_value(row, header_lookup, 'state'),
-                    'pin_code': self._get_value(row, header_lookup, 'pin_code'),
-                    'monthly_income': self._get_value(row, header_lookup, 'monthly_income'),
-                    'profession': self._get_value(row, header_lookup, 'profession'),
-                    'bureau_score': self._get_value(row, header_lookup, 'bureau_score')
-                })
-            
-            if not valid_rows:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'No valid rows found in CSV',
-                    'errors': errors
-                }, status=400)
-            
-            # Generate session ID to store data temporarily
-            session_id = str(uuid.uuid4())
-            
-            # Store validated data in cache (expires in 1 hour)
-            try:
-                cache.set(f'bulk_upload_{session_id}', {
-                    'rows': valid_rows
-                }, 3600)
-            except Exception as e:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Cache service temporarily unavailable. Please try again.',
-                    'detail': str(e)
-                }, status=503)
-            
-            # Return success with preview data
+            total_rows = sum(1 for _ in csv_reader)
             return JsonResponse({
                 'success': True,
-                'session_id': session_id,
-                'total_rows': len(valid_rows),
-                'preview_rows': valid_rows[:10],  # First 10 rows for preview
-                'errors': errors[:20] if errors else []  # First 20 errors if any
+                'total_rows': total_rows,
+                'headers': csv_reader.fieldnames,
             })
-            
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': f'Error processing CSV: {str(e)}'
-            }, status=400)
+        except Exception as exc:
+            return JsonResponse({'success': False, 'error': f'Error processing CSV: {exc}'}, status=400)
 
 
 class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Bulk upload validated leads to database with batch processing"""
-    
-    BATCH_SIZE = 500  # Process 500 leads at a time to avoid timeout
-    
+    """Create an async UploadJob and enqueue CSV processing."""
+
     def test_func(self):
         return self.request.user.is_staff or self.request.user.is_superuser
-    
+
     def post(self, request):
-        session_id = request.POST.get('session_id')
-        
-        if not session_id:
-            return JsonResponse({'success': False, 'error': 'No session ID provided'}, status=400)
-        
-        # Retrieve validated data from cache
+        return JsonResponse({
+            'success': False,
+            'error': 'UI bulk upload is temporarily disabled. Use: python manage.py import_leads <file_path>'
+        }, status=503)
+
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return JsonResponse({'success': False, 'error': 'No file provided'}, status=400)
+
+        if not uploaded_file.name.lower().endswith('.csv'):
+            return JsonResponse({'success': False, 'error': 'Invalid file type. Please upload a CSV file.'}, status=400)
+
         try:
-            cached_data = cache.get(f'bulk_upload_{session_id}')
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': 'Cache service temporarily unavailable. Please try again.',
-                'detail': str(e)
-            }, status=503)
-        
-        if not cached_data:
-            return JsonResponse({
-                'success': False,
-                'error': 'Session expired or invalid. Please upload the CSV again.'
-            }, status=400)
-        
-        try:
-            rows = cached_data['rows']
-            total_rows = len(rows)
-            total_batches = (total_rows + self.BATCH_SIZE - 1) // self.BATCH_SIZE  # Calculate total batches
-
-            # Resume progress across multiple requests (one batch per request)
-            progress_key = f'upload_progress_{session_id}'
-            progress = cache.get(progress_key)
-            if not progress:
-                progress = {
-                    'total_rows': total_rows,
-                    'processed_rows': 0,
-                    'current_batch': 0,
-                    'total_batches': total_batches,
-                    'created_count': 0,
-                    'updated_count': 0,
-                    'status': 'processing'
-                }
-
-            processed_rows = int(progress.get('processed_rows', 0))
-            created_count = int(progress.get('created_count', 0))
-            updated_count = int(progress.get('updated_count', 0))
-
-            # If already completed (duplicate request), return final state.
-            if processed_rows >= total_rows:
-                progress['status'] = 'completed'
-                cache.set(progress_key, progress, timeout=3600)
-                return JsonResponse({
-                    'success': True,
-                    'completed': True,
-                    'created_count': created_count,
-                    'updated_count': updated_count,
-                    'progress': progress,
-                    'message': f'Created {created_count} new leads, Updated {updated_count} existing leads'
-                })
-
-            batch_start = processed_rows
-            batch_end = min(batch_start + self.BATCH_SIZE, total_rows)
-            batch_rows = rows[batch_start:batch_end]
-
-            # Process current batch with retry logic for DB locks
-            max_retries = 3
-            retry_delay = 0.5
-            batch_created = 0
-            batch_updated = 0
-
-            for attempt in range(max_retries):
-                try:
-                    with transaction.atomic():
-                        batch_created, batch_updated = self._process_batch(batch_rows)
-                    break
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    if 'database is locked' in error_msg and attempt < max_retries - 1:
-                        time.sleep(retry_delay * (2 ** attempt))
-                        continue
-                    raise
-
-            created_count += batch_created
-            updated_count += batch_updated
-
-            progress = {
-                'total_rows': total_rows,
-                'processed_rows': batch_end,
-                'current_batch': (batch_end + self.BATCH_SIZE - 1) // self.BATCH_SIZE,
-                'total_batches': total_batches,
-                'created_count': created_count,
-                'updated_count': updated_count,
-                'status': 'completed' if batch_end >= total_rows else 'processing'
-            }
-            cache.set(progress_key, progress, timeout=3600)
-
-            # Clear staged upload rows once completed
-            if progress['status'] == 'completed':
-                try:
-                    cache.delete(f'bulk_upload_{session_id}')
-                except Exception:
-                    pass
-
+            job = UploadJob.objects.create(file=uploaded_file, status=UploadJob.STATUS_PENDING)
+            process_csv_upload.delay(job.id)
             return JsonResponse({
                 'success': True,
-                'completed': progress['status'] == 'completed',
-                'created_count': created_count,
-                'updated_count': updated_count,
-                'progress': progress,
-                'message': f'Created {created_count} new leads, Updated {updated_count} existing leads'
+                'job_id': job.id,
+                'status': job.status,
+                'message': 'Upload job created and queued for processing.'
             })
-            
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': f'Error creating leads: {str(e)}'
-            }, status=400)
-    
-    def _process_batch(self, batch_rows):
-        """Process a batch of rows and return counts"""
-        created_count = 0
-        updated_count = 0
-
-        valid_genders = {'Male', 'Female', 'Other'}
-        gender_map = {
-            'm': 'Male',
-            'male': 'Male',
-            'f': 'Female',
-            'female': 'Female',
-            'o': 'Other',
-            'other': 'Other',
-        }
-        valid_professions = {'Salaried', 'Self-Employed', 'Business'}
-        profession_map = {
-            'salaried': 'Salaried',
-            'self employed': 'Self-Employed',
-            'self-employed': 'Self-Employed',
-            'business': 'Business',
-        }
-        
-        for row in batch_rows:
-            phone_number = row['phone_number']
-            
-            # Safely parse date_of_birth
-            date_of_birth_value = None
-            if row.get('date_of_birth', '').strip():
-                try:
-                    date_of_birth_value = datetime.strptime(row['date_of_birth'], '%Y-%m-%d').date()
-                except:
-                    date_of_birth_value = None
-            
-            # Safely parse numeric fields
-            monthly_income_value = None
-            if row.get('monthly_income', '').strip():
-                try:
-                    monthly_income_value = float(row['monthly_income'])
-                except:
-                    monthly_income_value = None
-            
-            bureau_score_value = None
-            if row.get('bureau_score', '').strip():
-                try:
-                    bureau_score_value = int(row['bureau_score'])
-                    if bureau_score_value < 0 or bureau_score_value > 900:
-                        bureau_score_value = None
-                except:
-                    bureau_score_value = None
-
-            # Skip invalid email instead of blocking upload
-            email_value = ''
-            raw_email = row.get('email', '').strip()
-            if raw_email:
-                try:
-                    validate_email(raw_email)
-                    email_value = raw_email
-                except DjangoValidationError:
-                    email_value = ''
-
-            # Normalize/validate gender
-            gender_value = ''
-            raw_gender = row.get('gender', '').strip()
-            if raw_gender:
-                mapped_gender = gender_map.get(raw_gender.lower(), raw_gender)
-                if mapped_gender in valid_genders:
-                    gender_value = mapped_gender
-
-            # Normalize/validate profession
-            profession_value = ''
-            raw_profession = row.get('profession', '').strip()
-            if raw_profession:
-                mapped_profession = profession_map.get(raw_profession.lower(), raw_profession)
-                if mapped_profession in valid_professions:
-                    profession_value = mapped_profession
-            
-            # Clean PAN number
-            pan_number_value = ''
-            if row.get('pan_number', '').strip():
-                pan = row['pan_number'].strip().upper()
-                if (len(pan) == 10 and 
-                    pan[:5].isalpha() and 
-                    pan[5:9].isdigit() and 
-                    pan[9].isalpha() and
-                    pan[3] in ['P', 'C', 'H', 'F', 'A', 'T', 'B', 'G', 'J', 'L']):
-                    pan_number_value = pan
-            
-            # Clean pin code
-            pin_code_value = ''
-            if row.get('pin_code', '').strip():
-                pin = row['pin_code'].strip()
-                if pin.isdigit() and len(pin) == 6:
-                    pin_code_value = pin
-            
-            try:
-                # Try to get existing user by phone number
-                existing_user = User.objects.get(phone_number=phone_number)
-                
-                # Update existing user
-                if row.get('first_name', '').strip():
-                    existing_user.first_name = row['first_name']
-                if row.get('last_name', '').strip():
-                    existing_user.last_name = row['last_name']
-                if pan_number_value:
-                    # PAN is optional; skip if already used by another user
-                    pan_in_use = User.objects.filter(pan_number=pan_number_value).exclude(pk=existing_user.pk).exists()
-                    if not pan_in_use:
-                        existing_user.pan_number = pan_number_value
-                if date_of_birth_value:
-                    existing_user.date_of_birth = date_of_birth_value
-                if gender_value:
-                    existing_user.gender = gender_value
-                if email_value:
-                    existing_user.email = email_value
-                if row.get('city', '').strip():
-                    existing_user.city = row['city']
-                if row.get('state', '').strip():
-                    existing_user.state = row['state']
-                if pin_code_value:
-                    existing_user.pin_code = pin_code_value
-                if monthly_income_value is not None:
-                    existing_user.monthly_income = monthly_income_value
-                if profession_value:
-                    existing_user.profession = profession_value
-                if bureau_score_value is not None:
-                    existing_user.bureau_score = bureau_score_value
-                
-                existing_user.save()
-                updated_count += 1
-                
-            except User.DoesNotExist:
-                # Create new user
-                create_pan_value = pan_number_value
-                if create_pan_value and User.objects.filter(pan_number=create_pan_value).exists():
-                    create_pan_value = ''
-
-                User.objects.create(
-                    phone_number=phone_number,
-                    first_name=row.get('first_name', ''),
-                    last_name=row.get('last_name', ''),
-                    pan_number=create_pan_value,
-                    date_of_birth=date_of_birth_value,
-                    gender=gender_value,
-                    email=email_value,
-                    city=row.get('city', ''),
-                    state=row.get('state', ''),
-                    pin_code=pin_code_value,
-                    monthly_income=monthly_income_value,
-                    profession=profession_value,
-                    bureau_score=bureau_score_value,
-                    status='pending'
-                )
-                created_count += 1
-        
-        return created_count, updated_count
+        except Exception as exc:
+            return JsonResponse({'success': False, 'error': f'Error creating upload job: {exc}'}, status=500)
 
 
 class UploadProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
-    """Get progress status of bulk upload"""
-    
+    """Return upload progress only; no processing happens here."""
+
     def test_func(self):
         return self.request.user.is_staff or self.request.user.is_superuser
-    
+
     def get(self, request):
-        session_id = request.GET.get('session_id')
-        
-        if not session_id:
-            return JsonResponse({'success': False, 'error': 'No session ID provided'}, status=400)
-        
+        return JsonResponse({
+            'success': False,
+            'error': 'Upload progress API is temporarily disabled for UI flow. Use management command import_leads.'
+        }, status=503)
+
+        job_id = request.GET.get('job_id')
+        if not job_id:
+            return JsonResponse({'success': False, 'error': 'No job_id provided'}, status=400)
+
         try:
-            progress_data = cache.get(f'upload_progress_{session_id}')
-        except Exception as e:
-            # Handle cache connection errors gracefully
-            return JsonResponse({
-                'success': False,
-                'error': 'Cache temporarily unavailable',
-                'detail': str(e)
-            }, status=503)
-        
-        if not progress_data:
-            return JsonResponse({
-                'success': False,
-                'error': 'No progress data found'
-            }, status=404)
-        
+            job = UploadJob.objects.get(pk=job_id)
+        except UploadJob.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Upload job not found'}, status=404)
+        except Exception as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+        percentage = 0
+        if job.total_rows > 0:
+            percentage = int((job.processed_rows / job.total_rows) * 100)
+
         return JsonResponse({
             'success': True,
-            'progress': progress_data
+            'progress': {
+                'job_id': job.id,
+                'status': job.status,
+                'total_rows': job.total_rows,
+                'processed_rows': job.processed_rows,
+                'percentage': percentage,
+                'is_done': job.status in [UploadJob.STATUS_COMPLETED, UploadJob.STATUS_FAILED],
+            }
         })
 
 

@@ -1197,6 +1197,7 @@
                     <div class="nav-card-title">Bulk Dedupe</div>
                     <div class="nav-card-description">Process bulk lead deduplication across lenders</div>
                 </a>
+
             </div>
         </div>
         {% endif %}
@@ -2891,40 +2892,34 @@
             
             const progressDiv = document.getElementById('uploadProgress');
             progressDiv.style.display = 'block';
-            progressDiv.innerHTML = '<div style="color: #667eea; font-weight: 600;">Validating CSV...</div>';
+            progressDiv.innerHTML = '<div style="color: #667eea; font-weight: 600;">Creating upload job...</div>';
             
             try {
-                const response = await fetch('/crm-admin/leads/validate-csv/', {
+                const response = await fetch('/crm-admin/leads/bulk-upload/', {
                     method: 'POST',
                     body: formData
                 });
-                
+
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response. ' + text.substring(0, 200));
+                }
+
                 const data = await response.json();
                 
                 progressDiv.style.display = 'none';
                 
                 if (data.success) {
-                    showPreview(data);
                     closeBulkUploadModal();
+                    confirmUpload(data.job_id);
                 } else {
-                    // Show detailed error message
-                    let errorMsg = 'CSV Validation Error:\n\n';
-                    errorMsg += data.error || 'Unknown error';
-                    
-                    if (data.errors && data.errors.length > 0) {
-                        errorMsg += '\n\nDetails:\n';
-                        errorMsg += data.errors.slice(0, 10).join('\n');
-                        if (data.errors.length > 10) {
-                            errorMsg += `\n... and ${data.errors.length - 10} more errors`;
-                        }
-                    }
-                    
-                    alert(errorMsg);
+                    alert('Upload start failed: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 progressDiv.style.display = 'none';
-                console.error('Validation error:', error);
-                alert('Error validating CSV. Please check the console for details.\n\nError: ' + error.message);
+                console.error('Upload start error:', error);
+                alert('Error starting upload.\n\nError: ' + error.message);
             }
         }
 
@@ -2979,9 +2974,7 @@
             document.getElementById('previewModal').classList.add('active');
         }
 
-        async function confirmUpload(sessionId) {
-            // Close preview modal and show progress modal
-            closePreviewModal();
+        async function confirmUpload(jobId) {
             document.getElementById('progressModal').classList.add('active');
             
             // Reset progress indicators
@@ -2994,22 +2987,12 @@
             document.getElementById('totalBatches').textContent = '0';
             document.getElementById('createdCount').textContent = '0';
             document.getElementById('updatedCount').textContent = '0';
-            
-            const formData = new FormData();
-            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-            formData.append('session_id', sessionId);
-            
+
             try {
-                // Process one batch per request to avoid long-request timeouts on hosting.
                 let isCompleted = false;
-                let finalCreated = 0;
-                let finalUpdated = 0;
 
                 while (!isCompleted) {
-                    const response = await fetch('/crm-admin/leads/bulk-upload/', {
-                        method: 'POST',
-                        body: formData
-                    });
+                    const response = await fetch(`/crm-admin/leads/upload-progress/?job_id=${jobId}`);
 
                     const contentType = response.headers.get('content-type') || '';
                     if (!contentType.includes('application/json')) {
@@ -3024,38 +3007,42 @@
 
                     if (data.progress) {
                         const progress = data.progress;
-                        const percentage = Math.round((progress.processed_rows / progress.total_rows) * 100);
+                        const percentage = progress.percentage || 0;
 
                         document.getElementById('progressBar').style.width = percentage + '%';
                         document.getElementById('progressBar').textContent = percentage + '%';
 
                         if (progress.status === 'processing') {
                             document.getElementById('progressStatus').textContent =
-                                `Processing batch ${progress.current_batch} of ${progress.total_batches}...`;
+                                `Processing ${progress.processed_rows} of ${progress.total_rows} rows...`;
+                        } else if (progress.status === 'failed') {
+                            document.getElementById('progressStatus').textContent = 'Upload failed';
                         } else {
                             document.getElementById('progressStatus').textContent = '✓ Upload completed!';
                         }
 
                         document.getElementById('processedCount').textContent = progress.processed_rows;
                         document.getElementById('totalCount').textContent = progress.total_rows;
-                        document.getElementById('currentBatch').textContent = progress.current_batch;
-                        document.getElementById('totalBatches').textContent = progress.total_batches;
-                        document.getElementById('createdCount').textContent = progress.created_count;
-                        document.getElementById('updatedCount').textContent = progress.updated_count;
+                        document.getElementById('currentBatch').textContent = '-';
+                        document.getElementById('totalBatches').textContent = '-';
+                        document.getElementById('createdCount').textContent = '-';
+                        document.getElementById('updatedCount').textContent = '-';
+
+                        isCompleted = !!progress.is_done;
+
+                        if (progress.status === 'failed') {
+                            throw new Error('Upload job failed on server.');
+                        }
                     }
 
-                    finalCreated = data.created_count || 0;
-                    finalUpdated = data.updated_count || 0;
-                    isCompleted = !!data.completed;
-
                     if (!isCompleted) {
-                        await new Promise(resolve => setTimeout(resolve, 120));
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                 }
 
                 setTimeout(() => {
                     document.getElementById('progressModal').classList.remove('active');
-                    alert(`✓ Upload Complete!\n\n✓ Created: ${finalCreated} new leads\n↻ Updated: ${finalUpdated} existing leads`);
+                    alert('✓ Upload Complete!');
                     location.reload();
                 }, 500);
             } catch (error) {

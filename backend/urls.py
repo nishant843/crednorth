@@ -16,18 +16,24 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from loans.views import DedupeAdminView, LoginView, LogoutView, HomeView, ProfileView
+from django.conf import settings
+from django.conf.urls.static import static
+from loans.views import DedupeAdminView, BulkDedupeProcessView, LoginView, LogoutView, HomeView, ProfileView
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('profile/', ProfileView.as_view(), name='profile'),
     path('depupeleadsztv/', DedupeAdminView.as_view(), name='admin_home'),
+    path('depupeleadsztv/process/', BulkDedupeProcessView.as_view(), name='bulk_dedupe_process'),
     path('crm-admin/', include('crm_admin.urls')),  # CRM Admin routes
     path('', HomeView.as_view(), name='home'),
     path('django-admin/', admin.site.urls),
     path('api/', include('loans.urls')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Custom error handlers
 handler404 = 'loans.views.custom_404'

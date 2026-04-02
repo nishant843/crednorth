@@ -159,6 +159,10 @@ if not DEBUG:
     # and renames the files with unique names for each version to support long-term caching
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Media files (uploaded CSV files)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -230,6 +234,25 @@ else:
 
 # Request/Response settings
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000  # Allow many fields in POST (for bulk admin actions)
+
+# ========== CELERY SETTINGS FOR ASYNC CSV PROCESSING ==========
+CELERY_BROKER_URL = REDIS_URL or 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_WORKER_CONCURRENCY = int(os.environ.get('CELERY_WORKER_CONCURRENCY', '1'))
+CELERY_WORKER_MAX_TASKS_PER_CHILD = int(os.environ.get('CELERY_WORKER_MAX_TASKS_PER_CHILD', '10'))
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# TezCredit integration configuration
+TEZCREDIT = {
+    'DEDUPE_BASE_URL': 'https://api.tezcredit.com',
+    'LMS_BASE_URL': 'https://lms.lendingplate.co.in',
+    'PARTNER_ID': '3115',
+    'API_TOKEN': os.getenv('TEZCREDIT_API_TOKEN'),
+}
 
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
