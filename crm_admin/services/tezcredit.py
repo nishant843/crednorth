@@ -36,6 +36,18 @@ def _get_config():
     }
 
 
+def _get_dedupe_config():
+    cfg = getattr(settings, 'TEZCREDIT', {}) or {}
+    dedupe_base_url = str(cfg.get('DEDUPE_BASE_URL', '')).rstrip('/')
+
+    if not dedupe_base_url:
+        raise ValueError('Missing TEZCREDIT configuration (DEDUPE_BASE_URL)')
+
+    return {
+        'DEDUPE_BASE_URL': dedupe_base_url,
+    }
+
+
 def _to_ddmmyyyy(dob_value):
     raw = str(dob_value or '').strip()
     if not raw:
@@ -60,7 +72,7 @@ def check_dedupe(mobile: str) -> bool:
     Raises:
         RuntimeError for API/network/invalid response errors.
     """
-    config = _get_config()
+    config = _get_dedupe_config()
     url = f"{config['DEDUPE_BASE_URL']}/identity/dedupe/partnerDedupe"
     payload = {'mobile': str(mobile or '').strip()}
 
@@ -73,17 +85,39 @@ def check_dedupe(mobile: str) -> bool:
         except ValueError as exc:
             raise RuntimeError(f'Invalid JSON response from TezCredit dedupe: {exc}')
 
-        duplicate_value = data.get('duplicate')
+        # Documented response shape:
+        # {
+        #   "statusCode": 200,
+        #   "message": "Dedupe Check Successful",
+        #   "data": { "found": true/false, "mobile": "..." }
+        # }
+        response_data = data.get('data') or {}
+
+        duplicate_value = response_data.get('found')
         if isinstance(duplicate_value, bool):
             return duplicate_value
 
-        # Fallbacks for varying vendor response formats.
-        for key in ('is_duplicate', 'dedupe', 'exists'):
-            if key in data:
-                return bool(data.get(key))
+        # Backward-compatible fallbacks for alternate vendor payloads.
+        for source in (response_data, data):
+            for key in ('duplicate', 'is_duplicate', 'dedupe', 'exists', 'found'):
+                if key not in source:
+                    continue
 
-        raise RuntimeError('TezCredit dedupe response missing duplicate indicator')
+                value = source.get(key)
+                if isinstance(value, bool):
+                    return value
 
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    if normalized in ('true', '1', 'yes'):
+                        return True
+                    if normalized in ('false', '0', 'no'):
+                        return False
+
+                if value is not None:
+                    return bool(value)
+
+        raise RuntimeError('TezCredit dedupe response missing found/duplicate indicator')
     except requests.exceptions.Timeout as exc:
         logger.warning('TezCredit dedupe timeout for mobile=%s', payload['mobile'])
         raise RuntimeError(f'TezCredit dedupe timeout: {exc}')

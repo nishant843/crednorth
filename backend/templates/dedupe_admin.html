@@ -436,7 +436,7 @@
                     <input type="file" id="csvFile" accept=".csv">
                 </div>
                 <div class="hint-text">
-                    CSV must contain: first_name, last_name, phoneNumber, pan, dob, gender, pincode, income, employmentType
+                    CreditSea: phoneNumber and/or pan. TezCredit: mobile or phoneNumber. LendingPlate: direct push (internal dedupe), requires mobile and pincode.
                 </div>
                 <div class="error-message" id="fileError">Please select a valid CSV file</div>
             </div>
@@ -447,6 +447,14 @@
                     <div class="checkbox-item">
                         <input type="checkbox" id="lender1" value="creditsea">
                         <label for="lender1">CreditSea</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="lender2" value="tezcredit">
+                        <label for="lender2">TezCredit</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="lender3" value="lendingplate">
+                        <label for="lender3">LendingPlate</label>
                     </div>
                 </div>
             </div>
@@ -503,12 +511,15 @@
         const csrfToken = getCookie('csrftoken');
 
         let selectedFile = null;
-        let selectedLender = null;
+        let selectedLenders = [];
         let dedupeResultBlob = null;
         let pushResultBlob = null;
+        let hasCompletedDedupe = false;
 
         const csvFileInput = document.getElementById('csvFile');
         const lender1Checkbox = document.getElementById('lender1');
+        const lender2Checkbox = document.getElementById('lender2');
+        const lender3Checkbox = document.getElementById('lender3');
         const fileError = document.getElementById('fileError');
 
         const dedupeButton = document.getElementById('dedupeButton');
@@ -532,8 +543,49 @@
 
         function checkFormValidity() {
             const hasFile = selectedFile !== null && validateCSVFile(selectedFile);
-            const hasLender = lender1Checkbox.checked;
+            const hasLender = lender1Checkbox.checked || lender2Checkbox.checked || lender3Checkbox.checked;
             dedupeButton.disabled = !(hasFile && hasLender);
+
+            const selected = getSelectedLenders();
+            const isLendingPlateOnly = selected.length === 1 && selected[0] === 'lendingplate';
+
+            if (isLendingPlateOnly) {
+                dedupeButton.disabled = true;
+                dedupeStatusText.textContent = 'Not required for LendingPlate (internal dedupe).';
+                dedupeStatusText.className = 'status-text';
+                pushButton.disabled = !hasFile;
+                pushStatusText.textContent = hasFile
+                    ? 'Ready for direct push to LendingPlate.'
+                    : 'Upload CSV and select lender';
+                pushStatusText.className = 'status-text';
+                return;
+            }
+
+            if (selected.includes('lendingplate') && selected.length > 1) {
+                dedupeButton.disabled = true;
+                pushButton.disabled = true;
+                dedupeStatusText.textContent = 'Run LendingPlate separately from dedupe-based lenders.';
+                dedupeStatusText.className = 'status-text error';
+                pushStatusText.textContent = 'Select either only LendingPlate or only dedupe-based lenders.';
+                pushStatusText.className = 'status-text error';
+                return;
+            }
+
+            pushButton.disabled = !(hasFile && hasLender && hasCompletedDedupe);
+        }
+
+        function getSelectedLenders() {
+            const lenders = [];
+            if (lender1Checkbox.checked) {
+                lenders.push(lender1Checkbox.value);
+            }
+            if (lender2Checkbox.checked) {
+                lenders.push(lender2Checkbox.value);
+            }
+            if (lender3Checkbox.checked) {
+                lenders.push(lender3Checkbox.value);
+            }
+            return lenders;
         }
 
         csvFileInput.addEventListener('change', (e) => {
@@ -548,6 +600,7 @@
 
             dedupeResultBlob = null;
             pushResultBlob = null;
+            hasCompletedDedupe = false;
             pushButton.disabled = true;
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
@@ -558,7 +611,29 @@
         });
 
         lender1Checkbox.addEventListener('change', () => {
-            selectedLender = lender1Checkbox.checked ? lender1Checkbox.value : null;
+            hasCompletedDedupe = false;
+            dedupeResultBlob = null;
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            pushResultBlob = null;
+            checkFormValidity();
+        });
+
+        lender2Checkbox.addEventListener('change', () => {
+            hasCompletedDedupe = false;
+            dedupeResultBlob = null;
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            pushResultBlob = null;
+            checkFormValidity();
+        });
+
+        lender3Checkbox.addEventListener('change', () => {
+            hasCompletedDedupe = false;
+            dedupeResultBlob = null;
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            pushResultBlob = null;
             checkFormValidity();
         });
 
@@ -572,7 +647,8 @@
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('lenders', selectedLender);
+            selectedLenders = getSelectedLenders();
+            selectedLenders.forEach((lender) => formData.append('lenders', lender));
             formData.append('check_dedupe', 'true');
             formData.append('send_leads', 'false');
 
@@ -599,6 +675,7 @@
                 dedupeStatusText.className = 'status-text completed';
                 dedupeDownloadButton.disabled = false;
                 dedupeButton.disabled = false;
+                hasCompletedDedupe = true;
 
                 pushButton.disabled = false;
                 pushStatusText.textContent = 'Ready to push non-duplicate leads';
@@ -632,9 +709,15 @@
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('lenders', selectedLender);
-            formData.append('check_dedupe', 'true');
+            selectedLenders = getSelectedLenders();
+            selectedLenders.forEach((lender) => formData.append('lenders', lender));
+            const isLendingPlateOnly = selectedLenders.length === 1 && selectedLenders[0] === 'lendingplate';
+            formData.append('check_dedupe', isLendingPlateOnly ? 'false' : 'true');
             formData.append('send_leads', 'true');
+
+            if (isLendingPlateOnly) {
+                pushStatusText.textContent = 'Pushing leads to LendingPlate (internal dedupe)...';
+            }
 
             try {
                 const response = await fetch('/depupeleadsztv/process/', {

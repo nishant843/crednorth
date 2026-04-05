@@ -254,6 +254,17 @@ TEZCREDIT = {
     'API_TOKEN': os.getenv('TEZCREDIT_API_TOKEN'),
 }
 
+LENDINGPLATE = {
+    'ENV': os.getenv('LENDINGPLATE_ENV', 'production'),
+    'UAT_BASE_URL': 'https://staging-lms.lendingplate.co.in',
+    'PRODUCTION_BASE_URL': 'https://lms.lendingplate.co.in',
+    'PARTNER_ID': os.getenv('LENDINGPLATE_PARTNER_ID', 'CREDNORTH'),
+    'API_TOKEN': os.getenv(
+        'LENDINGPLATE_API_TOKEN',
+        'ba7dff42f49bd639c2dcf4c4e8a4749993d9885d056fd66a1d12f95b132feb9e'
+    ),
+}
+
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
 # Session optimization for scale
