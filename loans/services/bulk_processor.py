@@ -123,7 +123,7 @@ def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send
     def _run_task(task_index: int, row_num: int, lender: str, row: dict):
         lender_result = process_lender(lender, row, check_dedupe, send_leads)
         return task_index, {
-            'row_number': row_num,
+            'phoneNumber': _get_phone_number(row),
             'lender': lender,
             'status': lender_result.get('status', ''),
             'result': lender_result.get('result', ''),
@@ -146,7 +146,7 @@ def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send
                 ordered_results[task_index] = result_row
             except Exception as exc:
                 ordered_results[idx] = {
-                    'row_number': row_num,
+                    'phoneNumber': _get_phone_number(row),
                     'lender': lender,
                     'status': 'FAILED',
                     'result': 'PROCESSING_ERROR',
@@ -156,6 +156,17 @@ def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send
                 }
 
     return [r for r in ordered_results if r is not None]
+
+
+def _get_phone_number(row: dict) -> str:
+    """
+    Extract the phone number field for output CSVs.
+    """
+    for key in ('phoneNumber', 'phonenumber', 'mobile', 'phone_number'):
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ''
 
 
 def _clean_value(value: str) -> str | None:
@@ -188,7 +199,7 @@ def _write_results_csv(output_path: str, results: List[dict]) -> None:
         results: List of result dictionaries
     """
     fieldnames = [
-        'row_number', 'lender', 'status', 'result', 
+        'phoneNumber', 'lender', 'status', 'result', 
         'lead_id', 'utm_link', 'message'
     ]
     

@@ -8,6 +8,7 @@ from .creditsea_dedupe import check_creditsea_dedupe
 from .creditsea_lead import create_creditsea_lead
 from crm_admin.services.tezcredit import check_dedupe as check_tezcredit_dedupe
 from crm_admin.services.tezcredit import push_lead as push_tezcredit_lead
+from crm_admin.services.lendingplate import push_lead as push_lendingplate_lead
 
 
 def process_lender(
@@ -41,6 +42,9 @@ def process_lender(
 
     if lender_lower == "tezcredit":
         return _process_tezcredit(row_data, check_dedupe, send_leads)
+
+    if lender_lower == "lendingplate":
+        return _process_lendingplate(row_data, check_dedupe, send_leads)
     
     return {
         "status": "FAILED",
@@ -196,4 +200,72 @@ def _process_tezcredit(row_data: dict, check_dedupe: bool, send_leads: bool) -> 
     return {
         "status": "FAILED",
         "result": "NO_ACTION_SELECTED"
+    }
+
+
+def _process_lendingplate(row_data: dict, check_dedupe: bool, send_leads: bool) -> dict:
+    """
+    Process LendingPlate workflow.
+
+    LendingPlate performs dedupe internally, so this flow is push-only.
+    """
+    mobile = (
+        row_data.get('mobile')
+        or row_data.get('phoneNumber')
+        or row_data.get('phonenumber')
+        or row_data.get('phone_number')
+    )
+
+    pincode = (
+        row_data.get('pinCode')
+        or row_data.get('pincode')
+        or row_data.get('pin_code')
+    )
+
+    customer_name = ' '.join(
+        part for part in [
+            str(row_data.get('first_name', '')).strip(),
+            str(row_data.get('last_name', '')).strip(),
+        ] if part
+    ).strip()
+    if not customer_name:
+        customer_name = str(row_data.get('name', '')).strip()
+
+    lead_payload = {
+        'ref_id': row_data.get('ref_id') or row_data.get('reference_id') or row_data.get('id'),
+        'mobile': str(mobile or '').strip(),
+        'customer_name': customer_name,
+        'pancard': row_data.get('pan') or row_data.get('pan_number') or row_data.get('pancard') or '',
+        'dob': row_data.get('dob') or row_data.get('date_of_birth') or '',
+        'pincode': str(pincode or '').strip(),
+        'net_mothlyincome': row_data.get('income') or row_data.get('monthly_income') or '',
+    }
+
+    if not send_leads:
+        return {
+            "status": "FAILED",
+            "result": "NO_ACTION_SELECTED",
+            "message": "LendingPlate uses internal dedupe. Use lead push directly."
+        }
+
+    push_result = push_lendingplate_lead(lead_payload)
+    if push_result.get('success'):
+        return {
+            "status": "SUCCESS",
+            "result": "LEAD_CREATED",
+            "lead_id": str((push_result.get('data') or {}).get('ref_id', '')),
+            "utm_link": '',
+            "message": push_result.get('message', '')
+        }
+
+    error_message = str(push_result.get('message', 'LendingPlate lead push failed'))
+    is_technical_error = any(
+        marker in error_message.lower()
+        for marker in ('timeout', 'http error', 'request error', 'unexpected error', 'invalid json')
+    )
+
+    return {
+        "status": "FAILED",
+        "result": "API_ERROR" if is_technical_error else "API_REJECTED",
+        "message": error_message
     }
