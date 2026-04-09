@@ -238,17 +238,49 @@ def _process_lendingplate(row_data: dict, check_dedupe: bool, send_leads: bool) 
         'pancard': row_data.get('pan') or row_data.get('pan_number') or row_data.get('pancard') or '',
         'dob': row_data.get('dob') or row_data.get('date_of_birth') or '',
         'pincode': str(pincode or '').strip(),
-        'net_mothlyincome': row_data.get('income') or row_data.get('monthly_income') or '',
+        'net_mothlyincome': (
+            row_data.get('net_mothlyincome')
+            or row_data.get('net_monthly_income')
+            or row_data.get('monthly_income')
+            or row_data.get('monthly income')
+            or row_data.get('income')
+            or ''
+        ),
+        'profession': row_data.get('profession') or '',
     }
 
-    if not send_leads:
+    push_result = push_lendingplate_lead(lead_payload)
+    error_message = str(push_result.get('message', 'LendingPlate lead push failed'))
+    is_duplicate_message = any(
+        marker in error_message.lower()
+        for marker in ('existing user', 'already exists', 'duplicate')
+    )
+
+    if check_dedupe and not send_leads:
+        if push_result.get('success'):
+            return {
+                "status": "SUCCESS",
+                "result": "NOT_DUPLICATE",
+                "message": push_result.get('message', '')
+            }
+
+        if is_duplicate_message:
+            return {
+                "status": "SUCCESS",
+                "result": "DUPLICATE",
+                "message": error_message
+            }
+
+        is_technical_error = any(
+            marker in error_message.lower()
+            for marker in ('timeout', 'http error', 'request error', 'unexpected error', 'invalid json')
+        )
         return {
             "status": "FAILED",
-            "result": "NO_ACTION_SELECTED",
-            "message": "LendingPlate uses internal dedupe. Use lead push directly."
+            "result": "API_ERROR" if is_technical_error else "API_REJECTED",
+            "message": error_message
         }
 
-    push_result = push_lendingplate_lead(lead_payload)
     if push_result.get('success'):
         return {
             "status": "SUCCESS",
@@ -258,14 +290,31 @@ def _process_lendingplate(row_data: dict, check_dedupe: bool, send_leads: bool) 
             "message": push_result.get('message', '')
         }
 
-    error_message = str(push_result.get('message', 'LendingPlate lead push failed'))
+    if is_duplicate_message:
+        return {
+            "status": "SUCCESS",
+            "result": "DUPLICATE",
+            "message": error_message
+        }
+
     is_technical_error = any(
         marker in error_message.lower()
         for marker in ('timeout', 'http error', 'request error', 'unexpected error', 'invalid json')
     )
 
+    is_validation_error = any(
+        marker in error_message.lower()
+        for marker in (
+            'invalid mobile format',
+            'invalid pincode format',
+            'invalid monthly income format',
+            'monthly income out of range',
+            'invalid dob format',
+        )
+    )
+
     return {
         "status": "FAILED",
-        "result": "API_ERROR" if is_technical_error else "API_REJECTED",
+        "result": "API_ERROR" if is_technical_error else ("VALIDATION_ERROR" if is_validation_error else "API_REJECTED"),
         "message": error_message
     }
