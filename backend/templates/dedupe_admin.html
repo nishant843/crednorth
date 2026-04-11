@@ -459,6 +459,53 @@
                 </div>
             </div>
 
+            <div class="section" id="lendingplateDetails" style="display: none; border-left: 4px solid #f6ad55; background: #2d3748; padding: 15px; margin-top: 15px;">
+                <div class="section-title">📋 LendingPlate Requirements</div>
+                
+                <div style="margin-top: 12px; font-size: 14px;">
+                    <div style="margin-bottom: 12px;">
+                        <strong>Required CSV Columns:</strong>
+                        <ul style="margin-top: 6px; margin-left: 20px;">
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">phone_number</code> or <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">mobile</code> - 10 digit mobile without country code</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">pin_code</code> or <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">pincode</code> - Exactly 6 digits</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">monthly_income</code> or <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">net_mothlyincome</code> - Numeric value between 1 and 1,000,000</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">pan_number</code> or <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">pancard</code> - PAN card number (will be converted to uppercase)</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">date_of_birth</code> or <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">dob</code> - Format: YYYY-MM-DD or DD/MM/YYYY</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">first_name</code> + <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">last_name</code> OR <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">name</code> - Customer name (max 50 chars)</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">profession</code> (optional) - Salaried, Self-Employed, or leave blank (defaults to Salaried)</li>
+                            <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">ref_id</code> (optional) - 5-10 digit unique reference ID, auto-generated if absent</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 12px;">
+                        <strong>Validation Rules:</strong>
+                        <ul style="margin-top: 6px; margin-left: 20px;">
+                            <li>Mobile: Must be exactly 10 digits (non-digits are stripped)</li>
+                            <li>Pincode: Must be exactly 6 digits (non-digits are stripped)</li>
+                            <li>Monthly Income: Must be numeric without commas (commas are removed)</li>
+                            <li>DOB: Auto-converts YYYY-MM-DD → DD/MM/YYYY format</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 12px;">
+                        <strong>Configuration Required:</strong>
+                        <ul style="margin-top: 6px; margin-left: 20px;">
+                            <li>Environment Variables:
+                                <ul style="margin-top: 6px; margin-left: 20px;">
+                                    <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">LENDINGPLATE_PARTNER_ID</code> - Your partner ID (e.g., TESTING, 3115, CREDNORTH)</li>
+                                    <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">LENDINGPLATE_API_TOKEN</code> - API authentication token (raw token, no Bearer prefix)</li>
+                                    <li><code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">LENDINGPLATE_ENV</code> - production or uat (defaults to production)</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div style="color: #cbd5e0;">
+                        <strong>API Endpoint:</strong> <code style="background: #1a202c; padding: 2px 6px; border-radius: 3px;">https://lms.lendingplate.co.in/api/v2/partner/generate_lead</code>
+                    </div>
+                </div>
+            </div>
+
             <div class="section">
                 <button class="action-button" id="dedupeButton" disabled>Check Duplicates</button>
             </div>
@@ -634,6 +681,11 @@
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             pushResultBlob = null;
+            
+            // Toggle LendingPlate requirements details
+            const lendingplateDetails = document.getElementById('lendingplateDetails');
+            lendingplateDetails.style.display = lender3Checkbox.checked ? 'block' : 'none';
+            
             checkFormValidity();
         });
 
