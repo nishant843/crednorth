@@ -10,13 +10,13 @@ workers = multiprocessing.cpu_count() * 2 + 1
 worker_class = 'sync'
 
 # Timeout configuration - CRITICAL for bulk uploads
-timeout = 300  # 5 minutes for processing large uploads
-graceful_timeout = 300
+timeout = 30000  # 5 minutes for processing large uploads
+graceful_timeout = 30000
 keepalive = 5
 
 # Request limits
-max_requests = 2000
-max_requests_jitter = 200
+max_requests = 40000
+max_requests_jitter = 1000
 
 # Logging
 accesslog = '-'
