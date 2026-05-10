@@ -564,6 +564,11 @@
         let dedupePollingInterval = null;
         let pushPollingInterval = null;
 
+        const STORAGE_KEYS = {
+            dedupeJobId: 'crednorth_dedupe_job_id',
+            pushJobId: 'crednorth_push_job_id'
+        };
+
         const csvFileInput = document.getElementById('csvFile');
         const lender1Checkbox = document.getElementById('lender1');
         const lender2Checkbox = document.getElementById('lender2');
@@ -577,6 +582,96 @@
         const pushButton = document.getElementById('pushButton');
         const pushStatusText = document.getElementById('pushStatusText');
         const pushDownloadButton = document.getElementById('pushDownloadButton');
+
+        function saveJobId(type, jobId) {
+            const key = type === 'dedupe' ? STORAGE_KEYS.dedupeJobId : STORAGE_KEYS.pushJobId;
+            if (jobId) {
+                localStorage.setItem(key, String(jobId));
+            }
+        }
+
+        function getSavedJobId(type) {
+            const key = type === 'dedupe' ? STORAGE_KEYS.dedupeJobId : STORAGE_KEYS.pushJobId;
+            return localStorage.getItem(key);
+        }
+
+        function clearSavedJobId(type) {
+            const key = type === 'dedupe' ? STORAGE_KEYS.dedupeJobId : STORAGE_KEYS.pushJobId;
+            localStorage.removeItem(key);
+        }
+
+        async function restoreSavedJob(type, jobId, statusElement, downloadButton, onComplete) {
+            try {
+                statusElement.textContent = 'Checking saved job status...';
+                statusElement.className = 'status-text processing';
+
+                const response = await fetch(`/depupeleadsztv/progress/?job_id=${jobId}`);
+                if (!response.ok) {
+                    statusElement.textContent = 'Saved job not found or expired';
+                    statusElement.className = 'status-text error';
+                    clearSavedJobId(type);
+                    return;
+                }
+
+                const data = await response.json();
+                const progress = data.progress;
+
+                if (progress.is_done) {
+                    if (progress.status === 'completed') {
+                        statusElement.textContent = `Completed: ${progress.success_count} success, ${progress.failed_count} failed`;
+                        statusElement.className = 'status-text completed';
+                        downloadButton.disabled = false;
+                        if (onComplete) onComplete(true, jobId);
+                    } else {
+                        statusElement.textContent = `Failed: ${progress.error_logs || 'Processing failed'}`;
+                        statusElement.className = 'status-text error';
+                        if (onComplete) onComplete(false, jobId);
+                    }
+                    return;
+                }
+
+                statusElement.textContent = 'Resumed: processing in background...';
+                statusElement.className = 'status-text processing';
+
+                if (type === 'dedupe') {
+                    if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+                    dedupePollingInterval = pollProgress(jobId, statusElement, downloadButton, onComplete);
+                } else {
+                    if (pushPollingInterval) clearInterval(pushPollingInterval);
+                    pushPollingInterval = pollProgress(jobId, statusElement, downloadButton, onComplete);
+                }
+            } catch (error) {
+                statusElement.textContent = `Error restoring saved job: ${error.message}`;
+                statusElement.className = 'status-text error';
+            }
+        }
+
+        async function restoreSavedJobsOnLoad() {
+            const savedDedupeJobId = getSavedJobId('dedupe');
+            const savedPushJobId = getSavedJobId('push');
+
+            if (savedDedupeJobId) {
+                dedupeJobId = savedDedupeJobId;
+                await restoreSavedJob(
+                    'dedupe',
+                    dedupeJobId,
+                    dedupeStatusText,
+                    dedupeDownloadButton,
+                    (success) => {
+                        if (success) {
+                            pushStatusText.textContent = 'Dedupe complete. You can upload again to push.';
+                            pushStatusText.className = 'status-text';
+                        }
+                        checkFormValidity();
+                    }
+                );
+            }
+
+            if (savedPushJobId) {
+                pushJobId = savedPushJobId;
+                await restoreSavedJob('push', pushJobId, pushStatusText, pushDownloadButton);
+            }
+        }
 
         function validateCSVFile(file) {
             if (!file) return false;
@@ -703,6 +798,8 @@
 
             dedupeJobId = null;
             pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             dedupeStatusText.textContent = 'Waiting for input';
@@ -717,6 +814,8 @@
         lender1Checkbox.addEventListener('change', () => {
             dedupeJobId = null;
             pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             checkFormValidity();
@@ -727,6 +826,8 @@
         lender2Checkbox.addEventListener('change', () => {
             dedupeJobId = null;
             pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             checkFormValidity();
@@ -737,6 +838,8 @@
         lender3Checkbox.addEventListener('change', () => {
             dedupeJobId = null;
             pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             
@@ -782,6 +885,7 @@
 
                 const data = await response.json();
                 dedupeJobId = data.job_id;
+                saveJobId('dedupe', dedupeJobId);
 
                 dedupeStatusText.textContent = 'Processing (polling for updates)...';
                 dedupeStatusText.className = 'status-text processing';
@@ -846,6 +950,7 @@
 
                 const data = await response.json();
                 pushJobId = data.job_id;
+                saveJobId('push', pushJobId);
 
                 pushStatusText.textContent = 'Processing (polling for updates)...';
                 pushStatusText.className = 'status-text processing';
@@ -865,6 +970,9 @@
             if (!pushJobId) return;
             window.location = `/depupeleadsztv/download/?job_id=${pushJobId}`;
         });
+
+        // Restore previously queued jobs after tab reload/reopen.
+        restoreSavedJobsOnLoad();
     </script>
 </body>
 </html>
