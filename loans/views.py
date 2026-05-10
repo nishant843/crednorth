@@ -9,9 +9,12 @@ from django.contrib import messages
 import os
 import tempfile
 import json
+import csv
+import io
 from loans.services.bulk_processor import process_csv
-from crm_admin.models import UploadJob
+from crm_admin.models import UploadJob, UploadedLeadRow
 from crm_admin.tasks import process_lead_dedupe_push
+from crm_admin.csv_parser import parse_csv_stream, bulk_insert_lead_rows
 
 
 # Custom Error Handlers
@@ -105,7 +108,10 @@ class DedupeAdminView(View):
 
 @method_decorator(login_required, name='dispatch')
 class BulkDedupeProcessView(View):
-    """Handle bulk dedupe processing via Celery background task (async)."""
+    """
+    Handle bulk dedupe processing via Celery background task (async).
+    NEW: Parses CSV immediately and stages rows in DB instead of using file paths.
+    """
     def post(self, request):
         uploaded_file = request.FILES.get('file')
         lenders = request.POST.getlist('lenders')
@@ -119,12 +125,9 @@ class BulkDedupeProcessView(View):
             return JsonResponse({'error': 'No lenders selected'}, status=400)
 
         try:
-            # Save uploaded file temporarily
-            input_fd, input_path = tempfile.mkstemp(suffix='.csv')
-            with os.fdopen(input_fd, 'wb') as f:
-                for chunk in uploaded_file.chunks():
-                    f.write(chunk)
-
+            # Parse CSV immediately in request (not in worker)
+            reader, fieldnames = parse_csv_stream(uploaded_file)
+            
             # Create UploadJob for progress tracking
             job = UploadJob.objects.create(
                 job_type=UploadJob.JOB_TYPE_LEAD_PROCESSING,
@@ -133,25 +136,32 @@ class BulkDedupeProcessView(View):
                 check_dedupe=check_dedupe,
                 send_leads=send_leads
             )
-
-            # Queue async Celery task
-            task = process_lead_dedupe_push.delay(
-                job.id,
-                input_path,
-                lenders,
-                check_dedupe,
-                send_leads
+            
+            # Bulk insert CSV rows into UploadedLeadRow staging table
+            # This happens synchronously in request but is fast (just DB inserts)
+            total_rows = bulk_insert_lead_rows(job, reader, fieldnames, batch_size=500)
+            
+            # Update staging rows with lender selection
+            UploadedLeadRow.objects.filter(upload_job=job).update(
+                lender_selection=json.dumps(lenders)
             )
-
+            
+            # Queue async Celery task with ONLY the job_id
+            # Worker processes DB rows, not file paths
+            task = process_lead_dedupe_push.delay(job.id)
+            
             return JsonResponse({
                 'success': True,
                 'job_id': job.id,
                 'task_id': task.id,
-                'message': 'Lead processing queued. Polling for results...'
+                'total_rows': total_rows,
+                'message': 'CSV staged and processing queued'
             })
 
+        except ValueError as exc:
+            return JsonResponse({'error': f'CSV validation error: {str(exc)}'}, status=400)
         except Exception as exc:
-            return JsonResponse({'error': f'Error queuing task: {str(exc)}'}, status=500)
+            return JsonResponse({'error': f'Error processing upload: {str(exc)}'}, status=500)
 
 
 @method_decorator(login_required, name='dispatch')
