@@ -119,6 +119,7 @@ class CSVUtilsTest(TestCase):
         self.assertTrue(created)
         self.assertEqual(user.phone_number, '9876543210')
         self.assertEqual(user.email, 'jane@example.com')
+        
     
     def test_update_user_from_csv(self):
         """Test updating existing user from CSV data"""

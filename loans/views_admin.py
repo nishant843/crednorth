@@ -628,6 +628,7 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
                     'first_name': row['first_name'].strip(),
                     'last_name': row['last_name'].strip(),
                     'phone_number': phone,
+                    
                     'pan_number': pan,
                     'date_of_birth': date_of_birth if date_of_birth else None,
                     'gender': row.get('gender', '').strip() or '',
@@ -722,6 +723,7 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                                 first_name=row['first_name'],
                                 last_name=row['last_name'],
                                 phone_number=row['phone_number'],
+                                
                                 pan_number=row['pan_number'],
                                 date_of_birth=row['date_of_birth'],
                                 gender=row['gender'],

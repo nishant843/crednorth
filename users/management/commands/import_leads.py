@@ -161,6 +161,7 @@ def row_to_user(row, header_lookup):
         first_name=first_name,
         last_name=last_name,
         email=get_value(row, header_lookup, 'email'),
+        
         pan_number=valid_pan(get_value(row, header_lookup, 'pan_number')),
         date_of_birth=parse_date(get_value(row, header_lookup, 'date_of_birth')),
         gender=valid_gender(get_value(row, header_lookup, 'gender')),

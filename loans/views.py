@@ -8,7 +8,10 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib import messages
 import os
 import tempfile
+import json
 from loans.services.bulk_processor import process_csv
+from crm_admin.models import UploadJob
+from crm_admin.tasks import process_lead_dedupe_push
 
 
 # Custom Error Handlers
@@ -102,7 +105,7 @@ class DedupeAdminView(View):
 
 @method_decorator(login_required, name='dispatch')
 class BulkDedupeProcessView(View):
-    """Handle bulk dedupe processing via standard Django view (non-DRF)."""
+    """Handle bulk dedupe processing via Celery background task (async)."""
     def post(self, request):
         uploaded_file = request.FILES.get('file')
         lenders = request.POST.getlist('lenders')
@@ -115,34 +118,98 @@ class BulkDedupeProcessView(View):
         if not lenders:
             return JsonResponse({'error': 'No lenders selected'}, status=400)
 
-        input_fd, input_path = tempfile.mkstemp(suffix='.csv')
-        output_fd, output_path = tempfile.mkstemp(suffix='.csv')
-
         try:
-            with os.fdopen(input_fd, 'wb') as input_file:
+            # Save uploaded file temporarily
+            input_fd, input_path = tempfile.mkstemp(suffix='.csv')
+            with os.fdopen(input_fd, 'wb') as f:
                 for chunk in uploaded_file.chunks():
-                    input_file.write(chunk)
+                    f.write(chunk)
 
-            os.close(output_fd)
-
-            try:
-                process_csv(input_path, output_path, lenders, check_dedupe, send_leads)
-            except ValueError as exc:
-                return JsonResponse({'error': str(exc)}, status=400)
-            except Exception:
-                return JsonResponse({'error': 'Processing failed'}, status=400)
-
-            return FileResponse(
-                open(output_path, 'rb'),
-                as_attachment=True,
-                filename='bulk_dedupe_results.csv'
+            # Create UploadJob for progress tracking
+            job = UploadJob.objects.create(
+                job_type=UploadJob.JOB_TYPE_LEAD_PROCESSING,
+                status=UploadJob.STATUS_PENDING,
+                lenders=json.dumps(lenders),
+                check_dedupe=check_dedupe,
+                send_leads=send_leads
             )
 
-        except Exception:
-            return JsonResponse({'error': 'File processing failed'}, status=400)
-        finally:
-            if os.path.exists(input_path):
-                try:
-                    os.unlink(input_path)
-                except Exception:
-                    pass
+            # Queue async Celery task
+            task = process_lead_dedupe_push.delay(
+                job.id,
+                input_path,
+                lenders,
+                check_dedupe,
+                send_leads
+            )
+
+            return JsonResponse({
+                'success': True,
+                'job_id': job.id,
+                'task_id': task.id,
+                'message': 'Lead processing queued. Polling for results...'
+            })
+
+        except Exception as exc:
+            return JsonResponse({'error': f'Error queuing task: {str(exc)}'}, status=500)
+
+
+@method_decorator(login_required, name='dispatch')
+class DedupeProgressView(View):
+    """Poll for lead processing progress (lightweight read-only)."""
+    def get(self, request):
+        job_id = request.GET.get('job_id')
+        if not job_id:
+            return JsonResponse({'error': 'No job_id provided'}, status=400)
+
+        try:
+            job = UploadJob.objects.get(pk=job_id)
+        except UploadJob.DoesNotExist:
+            return JsonResponse({'error': 'Job not found'}, status=404)
+        except Exception as exc:
+            return JsonResponse({'error': str(exc)}, status=500)
+
+        return JsonResponse({
+            'success': True,
+            'progress': {
+                'job_id': job.id,
+                'status': job.status,
+                'total_rows': job.total_rows,
+                'processed_rows': job.processed_rows,
+                'percentage': job.percentage(),
+                'current_batch': job.current_batch,
+                'total_batches': job.total_batches,
+                'success_count': job.success_count,
+                'failed_count': job.failed_count,
+                'is_done': job.is_complete(),
+                'error_logs': job.error_logs if job.status == UploadJob.STATUS_FAILED else ''
+            }
+        })
+
+
+@method_decorator(login_required, name='dispatch')
+class DedupeDownloadResultsView(View):
+    """Download results CSV after processing completes."""
+    def get(self, request):
+        job_id = request.GET.get('job_id')
+        if not job_id:
+            return JsonResponse({'error': 'No job_id provided'}, status=400)
+
+        try:
+            job = UploadJob.objects.get(pk=job_id)
+        except UploadJob.DoesNotExist:
+            return JsonResponse({'error': 'Job not found'}, status=404)
+
+        if job.status != UploadJob.STATUS_COMPLETED:
+            return JsonResponse({
+                'error': f'Job status is {job.status}, not completed'
+            }, status=400)
+
+        if not job.result_file_path or not os.path.exists(job.result_file_path):
+            return JsonResponse({'error': 'Result file not found'}, status=404)
+
+        return FileResponse(
+            open(job.result_file_path, 'rb'),
+            as_attachment=True,
+            filename='lead_processing_results.csv'
+        )
