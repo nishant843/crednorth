@@ -559,9 +559,10 @@
 
         let selectedFile = null;
         let selectedLenders = [];
-        let dedupeResultBlob = null;
-        let pushResultBlob = null;
-        let hasCompletedDedupe = false;
+        let dedupeJobId = null;
+        let pushJobId = null;
+        let dedupePollingInterval = null;
+        let pushPollingInterval = null;
 
         const csvFileInput = document.getElementById('csvFile');
         const lender1Checkbox = document.getElementById('lender1');
@@ -618,7 +619,7 @@
                 return;
             }
 
-            pushButton.disabled = !(hasFile && hasLender && hasCompletedDedupe);
+            pushButton.disabled = !(hasFile && hasLender && dedupeJobId !== null);
         }
 
         function getSelectedLenders() {
@@ -635,6 +636,61 @@
             return lenders;
         }
 
+        function pollProgress(jobId, statusElement, downloadButton, onComplete) {
+            const startTime = Date.now();
+            const maxDuration = 3600000; // 1 hour timeout
+
+            const pollFn = async () => {
+                try {
+                    const response = await fetch(`/depupeleadsztv/progress/?job_id=${jobId}`);
+                    if (!response.ok) {
+                        statusElement.textContent = 'Error fetching progress';
+                        statusElement.className = 'status-text error';
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const progress = data.progress;
+
+                    // Update UI with live progress
+                    const percentage = progress.percentage || 0;
+                    const status = `${progress.processed_rows}/${progress.total_rows} rows | ${percentage}%`;
+                    statusElement.textContent = status;
+                    statusElement.className = 'status-text processing';
+
+                    if (progress.is_done) {
+                        clearInterval(pollingInterval);
+                        
+                        if (progress.status === 'completed') {
+                            statusElement.textContent = `Completed: ${progress.success_count} success, ${progress.failed_count} failed`;
+                            statusElement.className = 'status-text completed';
+                            downloadButton.disabled = false;
+                            if (onComplete) onComplete(true, jobId);
+                        } else if (progress.status === 'failed') {
+                            statusElement.textContent = `Failed: ${progress.error_logs}`;
+                            statusElement.className = 'status-text error';
+                            if (onComplete) onComplete(false, jobId);
+                        }
+                    }
+
+                    // Check timeout
+                    if (Date.now() - startTime > maxDuration) {
+                        clearInterval(pollingInterval);
+                        statusElement.textContent = 'Processing timeout (>1 hour)';
+                        statusElement.className = 'status-text error';
+                    }
+                } catch (error) {
+                    statusElement.textContent = `Error: ${error.message}`;
+                    statusElement.className = 'status-text error';
+                }
+            };
+
+            // Poll every 2-3 seconds
+            const pollingInterval = setInterval(pollFn, 2500);
+            pollFn(); // Call once immediately
+            return pollingInterval;
+        }
+
         csvFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file && validateCSVFile(file)) {
@@ -645,48 +701,51 @@
             }
             checkFormValidity();
 
-            dedupeResultBlob = null;
-            pushResultBlob = null;
-            hasCompletedDedupe = false;
-            pushButton.disabled = true;
+            dedupeJobId = null;
+            pushJobId = null;
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
             dedupeStatusText.textContent = 'Waiting for input';
             dedupeStatusText.className = 'status-text';
             pushStatusText.textContent = 'Complete dedupe check first';
             pushStatusText.className = 'status-text';
+            
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
         });
 
         lender1Checkbox.addEventListener('change', () => {
-            hasCompletedDedupe = false;
-            dedupeResultBlob = null;
+            dedupeJobId = null;
+            pushJobId = null;
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
-            pushResultBlob = null;
             checkFormValidity();
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
         });
 
         lender2Checkbox.addEventListener('change', () => {
-            hasCompletedDedupe = false;
-            dedupeResultBlob = null;
+            dedupeJobId = null;
+            pushJobId = null;
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
-            pushResultBlob = null;
             checkFormValidity();
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
         });
 
         lender3Checkbox.addEventListener('change', () => {
-            hasCompletedDedupe = false;
-            dedupeResultBlob = null;
+            dedupeJobId = null;
+            pushJobId = null;
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
-            pushResultBlob = null;
             
-            // Toggle LendingPlate requirements details
             const lendingplateDetails = document.getElementById('lendingplateDetails');
             lendingplateDetails.style.display = lender3Checkbox.checked ? 'block' : 'none';
             
             checkFormValidity();
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
         });
 
         dedupeButton.addEventListener('click', async () => {
@@ -694,7 +753,7 @@
             dedupeDownloadButton.disabled = true;
             pushButton.disabled = true;
 
-            dedupeStatusText.textContent = 'Checking for duplicates...';
+            dedupeStatusText.textContent = 'Queuing job...';
             dedupeStatusText.className = 'status-text processing';
 
             const formData = new FormData();
@@ -721,42 +780,39 @@
                     return;
                 }
 
-                dedupeResultBlob = await response.blob();
+                const data = await response.json();
+                dedupeJobId = data.job_id;
 
-                dedupeStatusText.textContent = 'Dedupe check completed';
-                dedupeStatusText.className = 'status-text completed';
-                dedupeDownloadButton.disabled = false;
+                dedupeStatusText.textContent = 'Processing (polling for updates)...';
+                dedupeStatusText.className = 'status-text processing';
                 dedupeButton.disabled = false;
-                hasCompletedDedupe = true;
 
-                pushButton.disabled = false;
-                pushStatusText.textContent = 'Ready to push non-duplicate leads';
-                pushStatusText.className = 'status-text';
+                // Start polling for progress
+                dedupePollingInterval = pollProgress(dedupeJobId, dedupeStatusText, dedupeDownloadButton, (success, jobId) => {
+                    if (success) {
+                        pushButton.disabled = false;
+                        pushStatusText.textContent = 'Ready to push non-duplicate leads';
+                        pushStatusText.className = 'status-text';
+                    }
+                });
 
             } catch (error) {
-                dedupeStatusText.textContent = 'Error: Network or server error';
+                dedupeStatusText.textContent = `Error: ${error.message}`;
                 dedupeStatusText.className = 'status-text error';
                 dedupeButton.disabled = false;
             }
         });
 
         dedupeDownloadButton.addEventListener('click', () => {
-            if (!dedupeResultBlob) return;
-            const url = window.URL.createObjectURL(dedupeResultBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'dedupe_results.csv';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            if (!dedupeJobId) return;
+            window.location = `/depupeleadsztv/download/?job_id=${dedupeJobId}`;
         });
 
         pushButton.addEventListener('click', async () => {
             pushButton.disabled = true;
             pushDownloadButton.disabled = true;
 
-            pushStatusText.textContent = 'Pushing non-duplicate leads...';
+            pushStatusText.textContent = 'Queuing job...';
             pushStatusText.className = 'status-text processing';
 
             const formData = new FormData();
@@ -768,7 +824,7 @@
             formData.append('send_leads', 'true');
 
             if (isLendingPlateOnly) {
-                pushStatusText.textContent = 'Pushing leads to LendingPlate (internal dedupe)...';
+                pushStatusText.textContent = 'Queuing LendingPlate push (internal dedupe)...';
             }
 
             try {
@@ -788,30 +844,26 @@
                     return;
                 }
 
-                pushResultBlob = await response.blob();
+                const data = await response.json();
+                pushJobId = data.job_id;
 
-                pushStatusText.textContent = 'Lead push completed';
-                pushStatusText.className = 'status-text completed';
-                pushDownloadButton.disabled = false;
+                pushStatusText.textContent = 'Processing (polling for updates)...';
+                pushStatusText.className = 'status-text processing';
                 pushButton.disabled = false;
 
+                // Start polling for progress
+                pushPollingInterval = pollProgress(pushJobId, pushStatusText, pushDownloadButton);
+
             } catch (error) {
-                pushStatusText.textContent = 'Error: Network or server error';
+                pushStatusText.textContent = `Error: ${error.message}`;
                 pushStatusText.className = 'status-text error';
                 pushButton.disabled = false;
             }
         });
 
         pushDownloadButton.addEventListener('click', () => {
-            if (!pushResultBlob) return;
-            const url = window.URL.createObjectURL(pushResultBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'lead_push_results.csv';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            if (!pushJobId) return;
+            window.location = `/depupeleadsztv/download/?job_id=${pushJobId}`;
         });
     </script>
 </body>

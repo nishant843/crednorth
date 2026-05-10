@@ -18,7 +18,10 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from loans.views import DedupeAdminView, BulkDedupeProcessView, LoginView, LogoutView, HomeView, ProfileView
+from loans.views import (
+    DedupeAdminView, BulkDedupeProcessView, DedupeProgressView, 
+    DedupeDownloadResultsView, LoginView, LogoutView, HomeView, ProfileView
+)
 
 urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
@@ -26,6 +29,8 @@ urlpatterns = [
     path('profile/', ProfileView.as_view(), name='profile'),
     path('depupeleadsztv/', DedupeAdminView.as_view(), name='admin_home'),
     path('depupeleadsztv/process/', BulkDedupeProcessView.as_view(), name='bulk_dedupe_process'),
+    path('depupeleadsztv/progress/', DedupeProgressView.as_view(), name='dedupe_progress'),
+    path('depupeleadsztv/download/', DedupeDownloadResultsView.as_view(), name='dedupe_download'),
     path('crm-admin/', include('crm_admin.urls')),  # CRM Admin routes
     path('', HomeView.as_view(), name='home'),
     path('django-admin/', admin.site.urls),
