@@ -1,4 +1,5 @@
 from django.db import models
+import json
 
 
 class UploadJob(models.Model):
@@ -90,3 +91,90 @@ class UploadJob(models.Model):
 	def is_complete(self):
 		"""Check if job has completed."""
 		return self.status in [self.STATUS_COMPLETED, self.STATUS_FAILED]
+
+
+class UploadedLeadRow(models.Model):
+	"""
+	Temporary staging table for uploaded CSV rows.
+	Worker processes these DB rows instead of file paths.
+	Optimize for batch querying and progress tracking.
+	"""
+	
+	STATUS_PENDING = 'pending'
+	STATUS_PROCESSING = 'processing'
+	STATUS_SUCCESS = 'success'
+	STATUS_FAILED = 'failed'
+	
+	STATUS_CHOICES = [
+		(STATUS_PENDING, 'Pending'),
+		(STATUS_PROCESSING, 'Processing'),
+		(STATUS_SUCCESS, 'Success'),
+		(STATUS_FAILED, 'Failed'),
+	]
+	
+	# Relationship
+	upload_job = models.ForeignKey(
+		UploadJob,
+		on_delete=models.CASCADE,
+		related_name='lead_rows',
+		db_index=True
+	)
+	
+	# Core phone/identity fields
+	phone_number = models.CharField(
+		max_length=20,
+		blank=True,
+		db_index=True
+	)
+	pan_number = models.CharField(
+		max_length=10,
+		blank=True,
+		db_index=True
+	)
+	pincode = models.CharField(max_length=6, blank=True)
+	
+	# Lead data (JSON for flexibility)
+	raw_data = models.JSONField(
+		default=dict,
+		blank=True,
+		help_text='Complete row data from CSV'
+	)
+	
+	# Processing fields
+	lender_selection = models.TextField(
+		default='[]',
+		help_text='JSON array of lenders to process for this row'
+	)
+	processing_status = models.CharField(
+		max_length=20,
+		choices=STATUS_CHOICES,
+		default=STATUS_PENDING,
+		db_index=True
+	)
+	
+	# Results (can be processed by multiple lenders)
+	lender_results = models.JSONField(
+		default=dict,
+		blank=True,
+		help_text='Dict mapping lender name → result dict'
+	)
+	
+	# Error tracking
+	error_message = models.TextField(blank=True)
+	
+	# Timing
+	processed_at = models.DateTimeField(null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+	updated_at = models.DateTimeField(auto_now=True)
+	
+	class Meta:
+		ordering = ['created_at']
+		db_table = 'crm_admin_uploaded_lead_row'
+		indexes = [
+			models.Index(fields=['upload_job', 'processing_status']),
+			models.Index(fields=['upload_job', 'created_at']),
+			models.Index(fields=['processing_status', 'created_at']),
+		]
+	
+	def __str__(self):
+		return f'Row {self.id} ({self.phone_number}) - {self.processing_status}'

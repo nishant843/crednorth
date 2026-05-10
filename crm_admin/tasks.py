@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models.signals import post_save
 
-from crm_admin.models import UploadJob
+from crm_admin.models import UploadJob, UploadedLeadRow
 from users.models import User
 from loans.services.lender_call import process_lender
 
@@ -301,20 +301,16 @@ def process_csv_upload(self, job_id):
 
 
 @shared_task(bind=True)
-def process_lead_dedupe_push(self, job_id, input_file_path, lenders, check_dedupe, send_leads):
+def process_lead_dedupe_push(self, job_id):
     """
     Async Celery task for lead processing (dedupe + push).
+    NEW: Processes UploadedLeadRow DB records instead of file paths.
+    Worker is filesystem-independent (Render-compatible).
     
     Args:
-        job_id: UploadJob ID for progress tracking
-        input_file_path: Path to uploaded CSV file
-        lenders: List of lender names
-        check_dedupe: Whether to perform dedupe checks
-        send_leads: Whether to push leads
-    
-    Streaming + batching for memory efficiency on 512MB Render instances.
+        job_id: UploadJob ID (all other info read from DB)
     """
-    BATCH_SIZE = 500
+    BATCH_SIZE = 50  # Process rows in smaller batches for progress updates
     MAX_WORKERS = min(16, max(4, (os.cpu_count() or 1) * 3))
     
     try:
@@ -328,154 +324,167 @@ def process_lead_dedupe_push(self, job_id, input_file_path, lenders, check_dedup
     job.started_at = datetime.now()
     job.save(update_fields=['status', 'started_at', 'updated_at'])
     
-    # Validate input file exists
-    if not os.path.exists(input_file_path):
-        job.status = UploadJob.STATUS_FAILED
-        job.error_logs = "Input file not found at path"
-        job.save(update_fields=['status', 'error_logs', 'updated_at'])
-        return {'ok': False, 'error': 'file_not_found'}
-    
     try:
-        # Create output CSV file
-        output_fd, output_path = tempfile.mkstemp(suffix='.csv', prefix='lead_results_')
-        os.close(output_fd)
+        # Get lenders and flags from UploadJob
+        lenders = json.loads(job.lenders or '[]')
+        check_dedupe = job.check_dedupe
+        send_leads = job.send_leads
         
-        # Read and validate CSV with encoding detection
-        decoded_csv = None
-        for encoding in ('utf-8-sig', 'utf-8', 'utf-16'):
-            try:
-                with open(input_file_path, 'rb') as f:
-                    raw_bytes = f.read()
-                decoded_csv = raw_bytes.decode(encoding)
-                break
-            except (UnicodeDecodeError, FileNotFoundError):
-                continue
+        if not lenders:
+            raise ValueError("No lenders configured in job")
         
-        if decoded_csv is None:
-            raise ValueError("CSV encoding not supported (utf-8, utf-16, utf-8-sig)")
+        # Fetch all staging rows for this job
+        lead_rows = UploadedLeadRow.objects.filter(
+            upload_job=job,
+            processing_status=UploadedLeadRow.STATUS_PENDING
+        ).order_by('id')
         
-        # Parse CSV
-        import io
-        reader = csv.DictReader(io.StringIO(decoded_csv))
-        if not reader.fieldnames:
-            raise ValueError("CSV file is empty or has no headers")
-        
-        # Collect all rows (we need to know total count for progress)
-        rows = list(reader)
-        total_rows = len(rows)
-        
+        total_rows = lead_rows.count()
         if total_rows == 0:
-            raise ValueError("CSV file has no data rows")
+            raise ValueError("No lead rows to process")
         
         job.total_rows = total_rows
         job.total_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
         job.save(update_fields=['total_rows', 'total_batches', 'updated_at'])
         
-        # Process rows with ThreadPoolExecutor for API-bound calls
-        results = []
-        error_rows = []
+        # Process rows with ThreadPoolExecutor
         success_count = 0
         failed_count = 0
+        processed_count = 0
         
-        def _process_single_lender_row(row_idx, row, lender):
-            """Process one row against one lender. Returns result dict."""
+        def _process_single_row_lender(lead_row, lender):
+            """Process one staging row against one lender."""
             try:
-                result = process_lender(lender, row, check_dedupe, send_leads)
-                phone = row.get('phoneNumber') or row.get('phonenumber') or row.get('mobile') or ''
+                # Get raw data from staging row
+                row_data = lead_row.raw_data or {}
+                
+                # Process with lender API
+                result = process_lender(lender, row_data, check_dedupe, send_leads)
                 
                 return {
-                    'phoneNumber': phone,
+                    'lead_row_id': lead_row.id,
+                    'phone': lead_row.phone_number,
+                    'lender': lender,
+                    'result': result
+                }
+            except Exception as exc:
+                logger.error(f"Error processing row {lead_row.id} for lender {lender}: {exc}")
+                return {
+                    'lead_row_id': lead_row.id,
+                    'phone': lead_row.phone_number,
+                    'lender': lender,
+                    'result': {
+                        'status': 'FAILED',
+                        'result': 'PROCESSING_ERROR',
+                        'message': str(exc)
+                    }
+                }
+        
+        # Build task list: (row, lender) pairs
+        tasks = []
+        for lead_row in lead_rows:
+            for lender in lenders:
+                tasks.append((lead_row, lender))
+        
+        # Process with thread pool
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {
+                executor.submit(_process_single_row_lender, lead_row, lender): (lead_row.id, lender)
+                for lead_row, lender in tasks
+            }
+            
+            # Results mapping: {row_id: {lender_name: result}}
+            row_results = {}
+            
+            for future in as_completed(futures):
+                try:
+                    proc_result = future.result()
+                    lead_row_id = proc_result['lead_row_id']
+                    lender = proc_result['lender']
+                    result = proc_result['result']
+                    
+                    # Store result for this row/lender combo
+                    if lead_row_id not in row_results:
+                        row_results[lead_row_id] = {}
+                    
+                    row_results[lead_row_id][lender] = result
+                    
+                    if result.get('status') == 'SUCCESS':
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                    
+                    processed_count += 1
+                    
+                    # Update progress every BATCH_SIZE operations
+                    if processed_count % (BATCH_SIZE * len(lenders)) == 0:
+                        job.processed_rows = processed_count
+                        job.current_batch = processed_count // (BATCH_SIZE * len(lenders))
+                        job.success_count = success_count
+                        job.failed_count = failed_count
+                        job.save(update_fields=[
+                            'processed_rows', 'current_batch', 'success_count',
+                            'failed_count', 'updated_at'
+                        ])
+                
+                except Exception as exc:
+                    logger.error(f"Future processing error: {exc}")
+                    failed_count += 1
+        
+        # Bulk update UploadedLeadRow records with results
+        row_updates = []
+        for lead_row_id, lender_results in row_results.items():
+            lead_row = UploadedLeadRow.objects.get(pk=lead_row_id)
+            lead_row.lender_results = lender_results
+            lead_row.processing_status = UploadedLeadRow.STATUS_SUCCESS if any(
+                r.get('status') == 'SUCCESS' for r in lender_results.values()
+            ) else UploadedLeadRow.STATUS_FAILED
+            lead_row.processed_at = datetime.now()
+            row_updates.append(lead_row)
+        
+        # Bulk update
+        if row_updates:
+            UploadedLeadRow.objects.bulk_update(
+                row_updates,
+                ['lender_results', 'processing_status', 'processed_at'],
+                batch_size=BATCH_SIZE
+            )
+        
+        # Generate downloadable results CSV from staging table
+        output_fd, output_path = tempfile.mkstemp(suffix='.csv', prefix='lead_results_')
+        os.close(output_fd)
+        
+        results_list = []
+        for lead_row in UploadedLeadRow.objects.filter(upload_job=job):
+            for lender, result in (lead_row.lender_results or {}).items():
+                results_list.append({
+                    'phoneNumber': lead_row.phone_number,
                     'lender': lender,
                     'status': result.get('status', ''),
                     'result': result.get('result', ''),
                     'lead_id': result.get('lead_id', ''),
                     'utm_link': result.get('utm_link', ''),
                     'message': result.get('message', '')
-                }
-            except Exception as exc:
-                phone = row.get('phoneNumber') or row.get('phonenumber') or row.get('mobile') or ''
-                logger.error(f"Error processing row {row_idx} for lender {lender}: {exc}")
-                return {
-                    'phoneNumber': phone,
-                    'lender': lender,
-                    'status': 'FAILED',
-                    'result': 'PROCESSING_ERROR',
-                    'lead_id': '',
-                    'utm_link': '',
-                    'message': str(exc)
-                }
+                })
         
-        # Build task list
-        tasks = []
-        for row_idx, row in enumerate(rows):
-            for lender in lenders:
-                tasks.append((row_idx, row, lender))
-        
-        # Process with thread pool
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(_process_single_lender_row, row_idx, row, lender): (row_idx, lender)
-                for row_idx, row, lender in tasks
-            }
-            
-            processed_count = 0
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    results.append(result)
-                    
-                    if result['status'] == 'SUCCESS':
-                        success_count += 1
-                    else:
-                        failed_count += 1
-                        error_rows.append(result)
-                    
-                    processed_count += 1
-                    
-                    # Update progress every batch
-                    if processed_count % BATCH_SIZE == 0:
-                        job.processed_rows = min(processed_count, total_rows * len(lenders))
-                        job.current_batch = processed_count // BATCH_SIZE
-                        job.success_count = success_count
-                        job.failed_count = failed_count
-                        job.save(update_fields=[
-                            'processed_rows', 'current_batch', 'success_count', 
-                            'failed_count', 'updated_at'
-                        ])
-                except Exception as exc:
-                    logger.error(f"Future processing error: {exc}")
-                    failed_count += 1
-        
-        # Write results to output CSV
-        output_fieldnames = [
-            'phoneNumber', 'lender', 'status', 'result',
-            'lead_id', 'utm_link', 'message'
-        ]
-        
+        # Write results CSV
+        fieldnames = ['phoneNumber', 'lender', 'status', 'result', 'lead_id', 'utm_link', 'message']
         with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=output_fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(results)
+            writer.writerows(results_list)
         
-        # Update job as completed
+        # Mark job as completed
         total_operations = total_rows * len(lenders)
         job.status = UploadJob.STATUS_COMPLETED
-        job.processed_rows = total_operations
+        job.processed_rows = processed_count
         job.success_count = success_count
         job.failed_count = failed_count
         job.result_file_path = output_path
         job.completed_at = datetime.now()
-        
-        # Build error summary
-        if error_rows:
-            error_summary = f"{failed_count} rows failed. Sample errors:\n"
-            for row in error_rows[:10]:
-                error_summary += f"  {row.get('phoneNumber')} ({row.get('lender')}): {row.get('message')}\n"
-            job.error_logs = error_summary
-        
         job.save(update_fields=[
             'status', 'processed_rows', 'success_count', 'failed_count',
-            'result_file_path', 'completed_at', 'error_logs', 'updated_at'
+            'result_file_path', 'completed_at', 'updated_at'
         ])
         
         logger.info(f"Lead processing completed. job_id={job_id} success={success_count} failed={failed_count}")
