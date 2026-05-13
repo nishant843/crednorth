@@ -65,13 +65,6 @@ class UploadJob(models.Model):
 		help_text='Error summary and messages'
 	)
 
-	# Result file storage
-	result_file_path = models.TextField(
-		default='',
-		blank=True,
-		help_text='Path to output CSV result file'
-	)
-
 	# Metadata
 	created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 	updated_at = models.DateTimeField(auto_now=True)

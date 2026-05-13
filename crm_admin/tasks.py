@@ -1,7 +1,6 @@
 import csv
 import logging
 import json
-import tempfile
 import os
 from datetime import datetime
 from contextlib import contextmanager
@@ -436,6 +435,14 @@ def process_lead_dedupe_push(self, job_id):
         for lead_row_id, lender_results in row_results.items():
             lead_row = UploadedLeadRow.objects.get(pk=lead_row_id)
             lead_row.lender_results = lender_results
+            row_errors = []
+            for lender_name, result in lender_results.items():
+                if (result or {}).get('status') == 'SUCCESS':
+                    continue
+                message = (result or {}).get('message') or (result or {}).get('result') or 'Unknown error'
+                row_errors.append(f"{lender_name}: {message}")
+
+            lead_row.error_message = '; '.join(row_errors)
             lead_row.processing_status = UploadedLeadRow.STATUS_SUCCESS if any(
                 r.get('status') == 'SUCCESS' for r in lender_results.values()
             ) else UploadedLeadRow.STATUS_FAILED
@@ -446,45 +453,19 @@ def process_lead_dedupe_push(self, job_id):
         if row_updates:
             UploadedLeadRow.objects.bulk_update(
                 row_updates,
-                ['lender_results', 'processing_status', 'processed_at'],
+                ['lender_results', 'error_message', 'processing_status', 'processed_at'],
                 batch_size=BATCH_SIZE
             )
         
-        # Generate downloadable results CSV from staging table
-        output_fd, output_path = tempfile.mkstemp(suffix='.csv', prefix='lead_results_')
-        os.close(output_fd)
-        
-        results_list = []
-        for lead_row in UploadedLeadRow.objects.filter(upload_job=job):
-            for lender, result in (lead_row.lender_results or {}).items():
-                results_list.append({
-                    'phoneNumber': lead_row.phone_number,
-                    'lender': lender,
-                    'status': result.get('status', ''),
-                    'result': result.get('result', ''),
-                    'lead_id': result.get('lead_id', ''),
-                    'utm_link': result.get('utm_link', ''),
-                    'message': result.get('message', '')
-                })
-        
-        # Write results CSV
-        fieldnames = ['phoneNumber', 'lender', 'status', 'result', 'lead_id', 'utm_link', 'message']
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results_list)
-        
         # Mark job as completed
-        total_operations = total_rows * len(lenders)
         job.status = UploadJob.STATUS_COMPLETED
         job.processed_rows = processed_count
         job.success_count = success_count
         job.failed_count = failed_count
-        job.result_file_path = output_path
         job.completed_at = datetime.now()
         job.save(update_fields=[
             'status', 'processed_rows', 'success_count', 'failed_count',
-            'result_file_path', 'completed_at', 'updated_at'
+            'completed_at', 'updated_at'
         ])
         
         logger.info(f"Lead processing completed. job_id={job_id} success={success_count} failed={failed_count}")
@@ -493,8 +474,7 @@ def process_lead_dedupe_push(self, job_id):
             'ok': True,
             'total_rows': total_rows,
             'success_count': success_count,
-            'failed_count': failed_count,
-            'output_path': output_path
+            'failed_count': failed_count
         }
     
     except Exception as exc:
