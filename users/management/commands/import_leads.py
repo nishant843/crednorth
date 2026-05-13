@@ -12,6 +12,7 @@ HEADER_ALIASES = {
     'phone_number': ['phone_number', 'phone', 'mobile', 'mobile_number', 'contact', 'contact_number'],
     'first_name': ['first_name', 'firstname', 'first', 'given_name'],
     'last_name': ['last_name', 'lastname', 'surname', 'last', 'family_name'],
+    'files_name': ['files_name', 'filesname', 'files_name', 'Files_name'],
     'email': ['email', 'email_id', 'mail'],
     'pan_number': ['pan_number', 'pan', 'pan_no', 'pancard', 'pan_card'],
     'date_of_birth': ['date_of_birth', 'dob', 'birth_date'],
@@ -160,6 +161,7 @@ def row_to_user(row, header_lookup):
         phone_number=phone,
         first_name=first_name,
         last_name=last_name,
+        files_name=get_value(row, header_lookup, 'files_name'),
         email=get_value(row, header_lookup, 'email'),
         
         pan_number=valid_pan(get_value(row, header_lookup, 'pan_number')),

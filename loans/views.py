@@ -19,24 +19,37 @@ class Echo:
         return value
 
 
+def _wants_json_response(request):
+    accept = request.headers.get('Accept', '')
+    return 'application/json' in accept or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+
 # Custom Error Handlers
 def custom_404(request, exception):
     """Custom 404 error handler"""
+    if _wants_json_response(request):
+        return JsonResponse({'error': 'Not found'}, status=404)
     return render(request, '404.html', status=404)
 
 
 def custom_500(request):
     """Custom 500 error handler"""
+    if _wants_json_response(request):
+        return JsonResponse({'error': 'Internal server error'}, status=500)
     return render(request, '500.html', status=500)
 
 
 def custom_403(request, exception):
     """Custom 403 error handler"""
+    if _wants_json_response(request):
+        return JsonResponse({'error': 'Forbidden'}, status=403)
     return render(request, '403.html', status=403)
 
 
 def custom_400(request, exception):
     """Custom 400 error handler"""
+    if _wants_json_response(request):
+        return JsonResponse({'error': 'Bad request'}, status=400)
     return render(request, '400.html', status=400)
 
 
