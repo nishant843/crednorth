@@ -8,7 +8,6 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib import messages
 import json
 import csv
-from loans.services.bulk_processor import process_csv
 from crm_admin.models import UploadJob, UploadedLeadRow
 from crm_admin.tasks import process_lead_dedupe_push
 from crm_admin.csv_parser import parse_csv_stream, bulk_insert_lead_rows
