@@ -6,7 +6,7 @@ import requests
 from typing import Optional
 
 
-CREDITSEA_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJrZXkiOiJhcGkifQ.k9X2LpQ7sT4Zm1A"
+CREDITSEA_API_KEY = "cs_dedupe_9f3a8b2c7e4d1a6f5c0b8e2a91d4f7c6"
 
 
 def check_creditsea_dedupe(phoneNumber: Optional[str], panNumber: Optional[str]) -> dict:
