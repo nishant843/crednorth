@@ -310,7 +310,7 @@ def process_lead_dedupe_push(self, job_id):
         job_id: UploadJob ID (all other info read from DB)
     """
     BATCH_SIZE = 50  # Process rows in smaller batches for progress updates
-    MAX_WORKERS = min(16, max(4, (os.cpu_count() or 1) * 3))
+    MAX_WORKERS = min(8, max(3, (os.cpu_count() or 1) * 2))  # Reduced for API safety
     
     try:
         job = UploadJob.objects.get(pk=job_id)
