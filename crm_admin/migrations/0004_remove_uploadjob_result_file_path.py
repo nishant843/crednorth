@@ -1,4 +1,4 @@
-from django.db import migrations
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -8,8 +8,14 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveField(
+        migrations.AlterField(
             model_name='uploadjob',
             name='result_file_path',
+            field=models.TextField(
+                blank=True,
+                null=True,
+                default='',
+                help_text='Deprecated local output CSV path (kept temporarily for safe rollout).',
+            ),
         ),
     ]
