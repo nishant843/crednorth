@@ -117,7 +117,8 @@ def _process_rows(rows: List[dict], lenders: List[str], check_dedupe: bool, send
         return []
 
     # Dedupe and lead creation calls are network-bound; use threads for throughput.
-    max_workers = min(32, len(tasks), max(4, (os.cpu_count() or 1) * 5))
+    # Reduced concurrency for API safety and rate-limiting protection.
+    max_workers = min(16, len(tasks), max(3, (os.cpu_count() or 1) * 3))
     ordered_results: list[dict | None] = [None] * len(tasks)
 
     def _run_task(task_index: int, row_num: int, lender: str, row: dict):
