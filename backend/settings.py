@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-$d2o0n@+fo^qbld@#+ub$@i7a%d9s^ojxwdx%h&@t95ne25vx!'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
     "crednorth.com",
@@ -193,44 +193,18 @@ SESSION_COOKIE_AGE = 3600  # 1 hour
 SESSION_SAVE_EVERY_REQUEST = True  # Keep session alive during uploads
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
-# Cache settings - Redis for production (Render.com), Local memory for dev
+# Cache settings - keep cache local to Django process to avoid Redis pressure.
 REDIS_URL = os.environ.get('REDIS_URL')
-USE_REDIS = False
-
-if REDIS_URL:
-    # Test if Redis is reachable
-    try:
-        import redis
-        r = redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
-        r.ping()
-        USE_REDIS = True
-        print(f"✓ Redis connected successfully at {REDIS_URL[:30]}...")
-    except Exception as e:
-        print(f"✗ Redis connection failed: {e}")
-        print("→ Falling back to local memory cache")
-
-if USE_REDIS:
-    # Production: Redis cache for scalability (1M+ users)
-    CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-            'LOCATION': REDIS_URL,
-            'TIMEOUT': 3600,  # 1 hour default
-            'KEY_PREFIX': 'crednorth',
-        }
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'crednorth-local-cache',
+        'TIMEOUT': 3600,
+        'OPTIONS': {
+            'MAX_ENTRIES': 5000,
+        },
     }
-else:
-    # Development or Redis unavailable: Local memory cache
-    CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-            'LOCATION': 'unique-snowflake',
-            'TIMEOUT': 3600,  # 1 hour cache timeout
-            'OPTIONS': {
-                'MAX_ENTRIES': 5000
-            }
-        }
-    }
+}
 
 # Request/Response settings
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000  # Allow many fields in POST (for bulk admin actions)
@@ -246,6 +220,20 @@ CELERY_WORKER_CONCURRENCY = int(os.environ.get('CELERY_WORKER_CONCURRENCY', '1')
 CELERY_WORKER_MAX_TASKS_PER_CHILD = int(os.environ.get('CELERY_WORKER_MAX_TASKS_PER_CHILD', '10'))
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TIMEZONE = 'Asia/Kolkata'
+CELERY_BROKER_POOL_LIMIT = int(os.environ.get('CELERY_BROKER_POOL_LIMIT', '5'))
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'socket_timeout': 10,
+    'socket_connect_timeout': 10,
+    'retry_on_timeout': True,
+    'health_check_interval': 30,
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    'socket_timeout': 10,
+    'socket_connect_timeout': 10,
+    'retry_on_timeout': True,
+    'health_check_interval': 30,
+}
 
 
 # TezCredit integration configuration
@@ -269,12 +257,8 @@ LENDINGPLATE = {
 
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
-# Session optimization for scale
-if USE_REDIS:
-    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'  # Use Redis for sessions
-    SESSION_CACHE_ALIAS = 'default'
-else:
-    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Database sessions
+# Session engine backed by PostgreSQL.
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
 # Logging configuration for production monitoring
 if not DEBUG:

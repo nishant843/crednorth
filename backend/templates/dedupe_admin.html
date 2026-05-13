@@ -780,8 +780,8 @@
                 }
             };
 
-            // Poll every 2-3 seconds
-            const pollingInterval = setInterval(pollFn, 2500);
+            // Poll every 5 seconds to reduce backend pressure.
+            const pollingInterval = setInterval(pollFn, 5000);
             pollFn(); // Call once immediately
             return pollingInterval;
         }
@@ -892,6 +892,7 @@
                 dedupeButton.disabled = false;
 
                 // Start polling for progress
+                if (dedupePollingInterval) clearInterval(dedupePollingInterval);
                 dedupePollingInterval = pollProgress(dedupeJobId, dedupeStatusText, dedupeDownloadButton, (success, jobId) => {
                     if (success) {
                         pushButton.disabled = false;
@@ -957,6 +958,7 @@
                 pushButton.disabled = false;
 
                 // Start polling for progress
+                if (pushPollingInterval) clearInterval(pushPollingInterval);
                 pushPollingInterval = pollProgress(pushJobId, pushStatusText, pushDownloadButton);
 
             } catch (error) {
