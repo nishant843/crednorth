@@ -1,20 +1,23 @@
 from django.shortcuts import render, redirect
 from django.views import View
-from django.http import FileResponse, JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib import messages
-import os
-import tempfile
 import json
 import csv
-import io
 from loans.services.bulk_processor import process_csv
 from crm_admin.models import UploadJob, UploadedLeadRow
 from crm_admin.tasks import process_lead_dedupe_push
 from crm_admin.csv_parser import parse_csv_stream, bulk_insert_lead_rows
+
+
+class Echo:
+    """Simple write-through buffer for streaming csv.writer output."""
+    def write(self, value):
+        return value
 
 
 # Custom Error Handlers
@@ -199,7 +202,53 @@ class DedupeProgressView(View):
 
 @method_decorator(login_required, name='dispatch')
 class DedupeDownloadResultsView(View):
-    """Download results CSV after processing completes."""
+    """Stream lead processing results CSV generated from UploadedLeadRow records."""
+
+    CHUNK_SIZE = 2000
+
+    def _csv_stream(self, upload_rows):
+        writer = csv.writer(Echo())
+        yield writer.writerow([
+            'phone_number',
+            'pan_number',
+            'lender',
+            'dedupe_result',
+            'lender_response',
+            'processing_status',
+            'error_message',
+            'processed_at',
+        ])
+
+        for lead_row in upload_rows.iterator(chunk_size=self.CHUNK_SIZE):
+            lender_results = lead_row.lender_results or {}
+
+            if lender_results:
+                for lender, result in lender_results.items():
+                    result = result or {}
+                    yield writer.writerow([
+                        lead_row.phone_number,
+                        lead_row.pan_number,
+                        lender,
+                        result.get('result', ''),
+                        json.dumps(result, ensure_ascii=False),
+                        lead_row.processing_status,
+                        lead_row.error_message,
+                        lead_row.processed_at.isoformat() if lead_row.processed_at else '',
+                    ])
+                continue
+
+            # Rows with no lender result are still included for visibility.
+            yield writer.writerow([
+                lead_row.phone_number,
+                lead_row.pan_number,
+                '',
+                '',
+                '',
+                lead_row.processing_status,
+                lead_row.error_message,
+                lead_row.processed_at.isoformat() if lead_row.processed_at else '',
+            ])
+
     def get(self, request):
         job_id = request.GET.get('job_id')
         if not job_id:
@@ -215,11 +264,11 @@ class DedupeDownloadResultsView(View):
                 'error': f'Job status is {job.status}, not completed'
             }, status=400)
 
-        if not job.result_file_path or not os.path.exists(job.result_file_path):
-            return JsonResponse({'error': 'Result file not found'}, status=404)
+        queryset = UploadedLeadRow.objects.filter(upload_job=job).order_by('id')
 
-        return FileResponse(
-            open(job.result_file_path, 'rb'),
-            as_attachment=True,
-            filename='lead_processing_results.csv'
+        response = StreamingHttpResponse(
+            self._csv_stream(queryset),
+            content_type='text/csv'
         )
+        response['Content-Disposition'] = f'attachment; filename="lead_processing_results_job_{job.id}.csv"'
+        return response
