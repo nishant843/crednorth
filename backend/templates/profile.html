@@ -397,6 +397,10 @@
                     <span class="info-value">{{ user.phone_number }}</span>
                 </div>
                 <div class="info-item">
+                    <span class="info-label">FILES_NAME</span>
+                    <span class="info-value">{{ user.files_name|default_if_none:"" }}</span>
+                </div>
+                <div class="info-item">
                     <span class="info-label">Email</span>
                     <span class="info-value {% if not user.email %}empty{% endif %}">{{ user.email|default:"Not provided" }}</span>
                 </div>

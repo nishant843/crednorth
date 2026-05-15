@@ -1353,6 +1353,7 @@
                                     <th>ID</th>
                                     <th>Name</th>
                                     <th>Phone</th>
+                                    <th>FILES_NAME</th>
                                     <th>PAN</th>
                                     <th>Email</th>
                                     <th>DOB</th>
@@ -1381,6 +1382,7 @@
                             <td>{{ user.id }}</td>
                             <td>{{ user.first_name }} {{ user.last_name }}</td>
                             <td>{{ user.phone_number }}</td>
+                            <td>{{ user.files_name|default:"" }}</td>
                             <td>{{ user.pan_number }}</td>
                             <td>{{ user.email|default:"—" }}</td>
                             <td>{{ user.date_of_birth|date:"d/m/Y"|default:"—" }}</td>
@@ -2949,6 +2951,7 @@
             html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">First Name</th>';
             html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Last Name</th>';
             html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Phone</th>';
+            html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">FILES_NAME</th>';
             html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">PAN</th>';
             html += '<th style="padding: 10px; border: 1px solid #2a2a3e;">Income</th>';
             html += '</tr></thead><tbody>';
@@ -2958,6 +2961,7 @@
                 html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.first_name}</td>`;
                 html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.last_name}</td>`;
                 html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.phone_number}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.files_name || ''}</td>`;
                 html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">${row.pan_number}</td>`;
                 html += `<td style="padding: 8px; border: 1px solid #2a2a3e;">₹${row.monthly_income}</td>`;
                 html += '</tr>';

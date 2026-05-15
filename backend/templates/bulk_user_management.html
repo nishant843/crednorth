@@ -490,16 +490,17 @@
             <div class="preview-table-container">
                 <table>
                     <thead>
-                        <tr>
-                            <th>Phone</th>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>Active</th>
-                            <th>Profession</th>
-                            <th>Income</th>
-                            <th>Bureau Score</th>
-                            <th>City</th>
-                        </tr>
+                                <tr>
+                                    <th>Phone</th>
+                                    <th>Name</th>
+                                    <th>FILES_NAME</th>
+                                    <th>Status</th>
+                                    <th>Active</th>
+                                    <th>Profession</th>
+                                    <th>Income</th>
+                                    <th>Bureau Score</th>
+                                    <th>City</th>
+                                </tr>
                     </thead>
                     <tbody id="previewTableBody">
                         <tr>
@@ -684,6 +685,7 @@
                             <tr>
                                 <td>${user.phone_number}</td>
                                 <td>${user.first_name || ''} ${user.last_name || ''}</td>
+                                <td>${user.files_name || ''}</td>
                                 <td><span class="status-badge status-${user.status || 'pending'}">${user.status || 'pending'}</span></td>
                                 <td><span class="status-badge status-${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Active' : 'Inactive'}</span></td>
                                 <td>${user.profession || 'N/A'}</td>
