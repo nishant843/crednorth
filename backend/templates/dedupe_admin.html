@@ -748,7 +748,7 @@
                     const progress = data.progress;
 
                     // Update UI with live progress
-                    const percentage = progress.percentage || 0;
+                    const percentage = Math.min(progress.percentage || 0, 100);
                     const status = `${progress.processed_rows}/${progress.total_rows} rows | ${percentage}%`;
                     statusElement.textContent = status;
                     statusElement.className = 'status-text processing';

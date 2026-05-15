@@ -79,7 +79,7 @@ class UploadJob(models.Model):
 		"""Calculate progress percentage."""
 		if self.total_rows == 0:
 			return 0
-		return int((self.processed_rows / self.total_rows) * 100)
+		return min(int((self.processed_rows / self.total_rows) * 100), 100)
 
 	def is_complete(self):
 		"""Check if job has completed."""

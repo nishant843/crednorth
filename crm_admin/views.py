@@ -826,7 +826,7 @@ class UploadProgressView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         percentage = 0
         if job.total_rows > 0:
-            percentage = int((job.processed_rows / job.total_rows) * 100)
+            percentage = min(int((job.processed_rows / job.total_rows) * 100), 100)
 
         return JsonResponse({
             'success': True,

@@ -349,7 +349,7 @@ def process_lead_dedupe_push(self, job_id):
         # Process rows with ThreadPoolExecutor
         success_count = 0
         failed_count = 0
-        processed_count = 0
+        completed_rows = 0
         
         def _process_single_row_lender(lead_row, lender):
             """Process one staging row against one lender."""
@@ -412,13 +412,15 @@ def process_lead_dedupe_push(self, job_id):
                         success_count += 1
                     else:
                         failed_count += 1
-                    
-                    processed_count += 1
-                    
-                    # Update progress every BATCH_SIZE operations
-                    if processed_count % (BATCH_SIZE * len(lenders)) == 0:
-                        job.processed_rows = processed_count
-                        job.current_batch = processed_count // (BATCH_SIZE * len(lenders))
+
+                    # Only count a CSV row as processed once all lender calls for that row are done.
+                    if len(row_results[lead_row_id]) == len(lenders):
+                        completed_rows += 1
+
+                    # Persist row-based progress so processed_rows never exceeds total_rows.
+                    if completed_rows % BATCH_SIZE == 0:
+                        job.processed_rows = completed_rows
+                        job.current_batch = (completed_rows + BATCH_SIZE - 1) // BATCH_SIZE
                         job.success_count = success_count
                         job.failed_count = failed_count
                         job.save(update_fields=[
@@ -459,7 +461,7 @@ def process_lead_dedupe_push(self, job_id):
         
         # Mark job as completed
         job.status = UploadJob.STATUS_COMPLETED
-        job.processed_rows = processed_count
+        job.processed_rows = completed_rows
         job.success_count = success_count
         job.failed_count = failed_count
         job.completed_at = datetime.now()
