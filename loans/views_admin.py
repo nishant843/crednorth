@@ -637,6 +637,7 @@ class CSVValidateView(LoginRequiredMixin, UserPassesTestMixin, View):
                     'state': row.get('state', '').strip() or '',
                     'pin_code': row['pin_code'].strip(),
                     'monthly_income': row['monthly_income'].strip(),
+                    'files_name': (row.get('Files_name') or row.get('files_name') or row.get('files') or '').strip(),
                     'profession': row['profession'].strip(),
                     'bureau_score': row.get('bureau_score', '').strip() or None
                 })

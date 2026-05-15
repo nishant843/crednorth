@@ -404,13 +404,14 @@ class BulkUserPreviewView(LoginRequiredMixin, UserPassesTestMixin, View):
         total_count = query.count()
         preview_users = list(query.values(
             'id', 'phone_number', 'first_name', 'last_name',
-            'status', 'profession', 'monthly_income', 'is_active'
+            'status', 'profession', 'monthly_income', 'is_active', 'files_name'
         )[:50])  # Show first 50 users
-        
+
+        # Return shape expected by frontend JS (backwards-compatible keys)
         return JsonResponse({
             'success': True,
-            'total_count': total_count,
-            'preview_users': preview_users,
+            'total': total_count,
+            'users': preview_users,
             'showing': len(preview_users)
         })
 

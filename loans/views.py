@@ -9,6 +9,7 @@ from django.contrib import messages
 import json
 import csv
 from crm_admin.models import UploadJob, UploadedLeadRow
+from users.models import User
 from crm_admin.tasks import process_lead_dedupe_push
 from crm_admin.csv_parser import parse_csv_stream, bulk_insert_lead_rows
 
@@ -218,11 +219,12 @@ class DedupeDownloadResultsView(View):
 
     CHUNK_SIZE = 2000
 
-    def _csv_stream(self, upload_rows):
+    def _csv_stream(self, upload_rows, user_files_map=None):
         writer = csv.writer(Echo())
         yield writer.writerow([
             'phone_number',
             'pan_number',
+            'Files_name',
             'lender',
             'dedupe_result',
             'lender_response',
@@ -233,6 +235,19 @@ class DedupeDownloadResultsView(View):
 
         for lead_row in upload_rows.iterator(chunk_size=self.CHUNK_SIZE):
             lender_results = lead_row.lender_results or {}
+            # Determine files_name: prefer staging `raw_data` field, fallback to mapped User.files_name
+            raw_files_name = ''
+            try:
+                rd = lead_row.raw_data or {}
+                # common CSV key variants
+                raw_files_name = rd.get('Files_name') or rd.get('files_name') or rd.get('Files name') or rd.get('filesname') or ''
+            except Exception:
+                raw_files_name = ''
+
+            user_files = ''
+            if not raw_files_name and user_files_map is not None:
+                user_files = user_files_map.get(lead_row.phone_number, '') or ''
+            files_name_value = raw_files_name or user_files
 
             if lender_results:
                 for lender, result in lender_results.items():
@@ -240,6 +255,7 @@ class DedupeDownloadResultsView(View):
                     yield writer.writerow([
                         lead_row.phone_number,
                         lead_row.pan_number,
+                        files_name_value,
                         lender,
                         result.get('result', ''),
                         json.dumps(result, ensure_ascii=False),
@@ -253,6 +269,7 @@ class DedupeDownloadResultsView(View):
             yield writer.writerow([
                 lead_row.phone_number,
                 lead_row.pan_number,
+                files_name_value,
                 '',
                 '',
                 '',
@@ -278,8 +295,15 @@ class DedupeDownloadResultsView(View):
 
         queryset = UploadedLeadRow.objects.filter(upload_job=job).order_by('id')
 
+        # Build a small map of phone_number -> User.files_name to enrich CSV rows when available.
+        phones = list(queryset.values_list('phone_number', flat=True).distinct())
+        user_files_map = {}
+        if phones:
+            users_qs = User.objects.filter(phone_number__in=phones).values('phone_number', 'files_name')
+            user_files_map = {u['phone_number']: u.get('files_name') for u in users_qs}
+
         response = StreamingHttpResponse(
-            self._csv_stream(queryset),
+            self._csv_stream(queryset, user_files_map),
             content_type='text/csv'
         )
         response['Content-Disposition'] = f'attachment; filename="lead_processing_results_job_{job.id}.csv"'
