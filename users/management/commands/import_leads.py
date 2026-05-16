@@ -5,7 +5,7 @@ from datetime import datetime
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from users.models import User
+from users.models import User, calculate_age_from_dob
 
 
 HEADER_ALIASES = {
@@ -157,6 +157,8 @@ def row_to_user(row, header_lookup):
             if len(parts) > 1:
                 last_name = parts[1]
 
+    dob = parse_date(get_value(row, header_lookup, 'date_of_birth'))
+
     return User(
         phone_number=phone,
         first_name=first_name,
@@ -165,7 +167,8 @@ def row_to_user(row, header_lookup):
         email=get_value(row, header_lookup, 'email'),
         
         pan_number=valid_pan(get_value(row, header_lookup, 'pan_number')),
-        date_of_birth=parse_date(get_value(row, header_lookup, 'date_of_birth')),
+        date_of_birth=dob,
+        age=calculate_age_from_dob(dob),
         gender=valid_gender(get_value(row, header_lookup, 'gender')),
         city=get_value(row, header_lookup, 'city'),
         state=get_value(row, header_lookup, 'state'),

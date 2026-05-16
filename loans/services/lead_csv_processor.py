@@ -78,6 +78,10 @@ def create_or_update_lead_from_csv_row(data_dict):
     first_name = get_value('first_name', 'firstname', 'first')
     if first_name:
         lead_data['first_name'] = first_name
+
+    files_name = get_value('files_name', 'filesname', 'files')
+    if files_name:
+        lead_data['files_name'] = files_name
     
     last_name = get_value('last_name', 'lastname', 'surname', 'last')
     if last_name:
