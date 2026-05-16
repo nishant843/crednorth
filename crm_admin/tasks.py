@@ -13,7 +13,7 @@ from django.db import transaction
 from django.db.models.signals import post_save
 
 from crm_admin.models import UploadJob, UploadedLeadRow
-from users.models import User
+from users.models import User, calculate_age_from_dob
 from loans.services.lender_call import process_lender
 
 
@@ -183,10 +183,12 @@ def _row_to_user(row, header_lookup):
         phone_number=phone,
         first_name=first_name,
         last_name=last_name,
+        files_name=_get_value(row, header_lookup, 'files_name'),
         email=_valid_email(_get_value(row, header_lookup, 'email')),
         
         pan_number=_valid_pan(_get_value(row, header_lookup, 'pan_number')),
-        date_of_birth=_parse_date(_get_value(row, header_lookup, 'date_of_birth')),
+        date_of_birth=(dob := _parse_date(_get_value(row, header_lookup, 'date_of_birth'))),
+        age=calculate_age_from_dob(dob),
         gender=_valid_gender(_get_value(row, header_lookup, 'gender')),
         city=_get_value(row, header_lookup, 'city'),
         state=_get_value(row, header_lookup, 'state'),
