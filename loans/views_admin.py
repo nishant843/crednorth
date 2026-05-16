@@ -724,6 +724,7 @@ class BulkUploadView(LoginRequiredMixin, UserPassesTestMixin, View):
                                 first_name=row['first_name'],
                                 last_name=row['last_name'],
                                 phone_number=row['phone_number'],
+                                files_name=row['files_name'],
                                 
                                 pan_number=row['pan_number'],
                                 date_of_birth=row['date_of_birth'],
