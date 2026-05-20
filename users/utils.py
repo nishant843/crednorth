@@ -16,7 +16,6 @@ def create_or_update_user_from_csv_row(data_dict):
         data_dict (dict): Dictionary containing user data from CSV row.
                          Expected keys (case-insensitive):
                          - phone_number (required)
-                         - country_code (optional, defaults to '91')
                          - email (optional)
                          - pan_number (required)
                          - first_name (required)
@@ -55,9 +54,6 @@ def create_or_update_user_from_csv_row(data_dict):
     
     # Prepare user data
     user_data = {}
-    
-    # Contact information
-    user_data['country_code'] = data.get('country_code', '91').strip()
     
     email = data.get('email', '').strip()
     user_data['email'] = email if email else None

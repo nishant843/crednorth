@@ -236,8 +236,9 @@ class User(PermissionsMixin, models.Model):
     
     def __str__(self):
         if self.first_name or self.last_name:
-            return f"{self.first_name} {self.last_name} - {self.phone_number} ({self.status})"
-        return f"User {self.phone_number} ({self.status})"
+            full_name = f"{self.first_name} {self.last_name}".strip()
+            return f"{full_name} ({self.phone_number})"
+        return f"User {self.phone_number}"
     
     def clean(self):
         """

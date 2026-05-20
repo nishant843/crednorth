@@ -7,7 +7,7 @@ class UserManager(models.Manager):
     No password required - authentication will be via OTP in the future.
     """
     
-    def create_user(self, phone_number, **extra_fields):
+    def create_user(self, phone_number, email=None, password=None, **extra_fields):
         """
         Create and save a regular user with the given phone number.
         No password required.
@@ -18,12 +18,18 @@ class UserManager(models.Manager):
         # Ensure phone_number is exactly 10 digits
         if not phone_number.isdigit() or len(phone_number) != 10:
             raise ValueError('Phone number must be exactly 10 digits')
-        
-        user = self.model(phone_number=phone_number, **extra_fields)
+
+        allowed_fields = {field.name for field in self.model._meta.fields}
+        normalized_fields = {key: value for key, value in extra_fields.items() if key in allowed_fields}
+
+        if email is not None and 'email' in allowed_fields and 'email' not in normalized_fields:
+            normalized_fields['email'] = email
+
+        user = self.model(phone_number=phone_number, **normalized_fields)
         user.save(using=self._db)
         return user
     
-    def create_superuser(self, phone_number, **extra_fields):
+    def create_superuser(self, phone_number, email=None, password=None, **extra_fields):
         """
         Create and save a superuser with the given phone number.
         No password required - superuser access via Django admin session.
@@ -37,5 +43,5 @@ class UserManager(models.Manager):
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
         
-        return self.create_user(phone_number, **extra_fields)
+        return self.create_user(phone_number, email=email, password=password, **extra_fields)
 

@@ -141,29 +141,21 @@ class BulkDedupeProcessView(View):
             return JsonResponse({'error': 'No lenders selected'}, status=400)
 
         try:
-            # Parse CSV immediately in request (not in worker)
-            reader, fieldnames = parse_csv_stream(uploaded_file)
-            
-            # Create UploadJob for progress tracking
             job = UploadJob.objects.create(
                 job_type=UploadJob.JOB_TYPE_LEAD_PROCESSING,
                 status=UploadJob.STATUS_PENDING,
                 lenders=json.dumps(lenders),
                 check_dedupe=check_dedupe,
-                send_leads=send_leads
+                send_leads=send_leads,
             )
-            
-            # Bulk insert CSV rows into UploadedLeadRow staging table
-            # This happens synchronously in request but is fast (just DB inserts)
-            total_rows = bulk_insert_lead_rows(job, reader, fieldnames, batch_size=500)
-            
-            # Update staging rows with lender selection
+
+            with parse_csv_stream(uploaded_file) as (reader, fieldnames):
+                total_rows = bulk_insert_lead_rows(job, reader, fieldnames, batch_size=1000)
+
             UploadedLeadRow.objects.filter(upload_job=job).update(
                 lender_selection=json.dumps(lenders)
             )
-            
-            # Queue async Celery task with ONLY the job_id
-            # Worker processes DB rows, not file paths
+
             task = process_lead_dedupe_push.delay(job.id)
             
             return JsonResponse({
