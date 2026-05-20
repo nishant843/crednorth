@@ -110,7 +110,7 @@ if os.environ.get('DATABASE_URL'):
     # Set database options
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
-        'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000'
+        'options': f'-c statement_timeout={os.environ.get("POSTGRES_STATEMENT_TIMEOUT_MS", "300000")} -c idle_in_transaction_session_timeout=120000'
     }
     # Optimize for high concurrency
     DATABASES['default']['ATOMIC_REQUESTS'] = False  # Manage transactions manually for performance

@@ -311,7 +311,7 @@ def process_lead_dedupe_push(self, job_id):
     Args:
         job_id: UploadJob ID (all other info read from DB)
     """
-    BATCH_SIZE = 50  # Process rows in smaller batches for progress updates
+    BATCH_SIZE = min(500, max(1, int(os.environ.get('LEAD_PROCESS_BATCH_SIZE', '500'))))
     MAX_WORKERS = min(8, max(3, (os.cpu_count() or 1) * 2))  # Reduced for API safety
     
     try:
@@ -348,118 +348,89 @@ def process_lead_dedupe_push(self, job_id):
         job.total_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
         job.save(update_fields=['total_rows', 'total_batches', 'updated_at'])
         
-        # Process rows with ThreadPoolExecutor
         success_count = 0
         failed_count = 0
         completed_rows = 0
-        
-        def _process_single_row_lender(lead_row, lender):
-            """Process one staging row against one lender."""
-            try:
-                # Get raw data from staging row
-                row_data = lead_row.raw_data or {}
-                
-                # Process with lender API
-                result = process_lender(lender, row_data, check_dedupe, send_leads)
-                
-                return {
-                    'lead_row_id': lead_row.id,
-                    'phone': lead_row.phone_number,
-                    'lender': lender,
-                    'result': result
-                }
-            except Exception as exc:
-                logger.error(f"Error processing row {lead_row.id} for lender {lender}: {exc}")
-                return {
-                    'lead_row_id': lead_row.id,
-                    'phone': lead_row.phone_number,
-                    'lender': lender,
-                    'result': {
+        batch_number = 0
+
+        def _process_single_row(lead_row):
+            """Process one staging row against all selected lenders."""
+            lender_results = {}
+            for lender in lenders:
+                try:
+                    result = process_lender(lender, lead_row.raw_data or {}, check_dedupe, send_leads)
+                except Exception as exc:
+                    logger.error('Error processing row %s for lender %s: %s', lead_row.id, lender, exc)
+                    result = {
                         'status': 'FAILED',
                         'result': 'PROCESSING_ERROR',
-                        'message': str(exc)
+                        'message': str(exc),
                     }
-                }
-        
-        # Build task list: (row, lender) pairs
-        tasks = []
-        for lead_row in lead_rows:
-            for lender in lenders:
-                tasks.append((lead_row, lender))
-        
-        # Process with thread pool
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(_process_single_row_lender, lead_row, lender): (lead_row.id, lender)
-                for lead_row, lender in tasks
-            }
-            
-            # Results mapping: {row_id: {lender_name: result}}
-            row_results = {}
-            
-            for future in as_completed(futures):
-                try:
-                    proc_result = future.result()
-                    lead_row_id = proc_result['lead_row_id']
-                    lender = proc_result['lender']
-                    result = proc_result['result']
-                    
-                    # Store result for this row/lender combo
-                    if lead_row_id not in row_results:
-                        row_results[lead_row_id] = {}
-                    
-                    row_results[lead_row_id][lender] = result
-                    
-                    if result.get('status') == 'SUCCESS':
-                        success_count += 1
-                    else:
-                        failed_count += 1
+                lender_results[lender] = result
+            return lead_row, lender_results
 
-                    # Only count a CSV row as processed once all lender calls for that row are done.
-                    if len(row_results[lead_row_id]) == len(lenders):
-                        completed_rows += 1
+        def _flush_batch_progress():
+            job.processed_rows = completed_rows
+            job.current_batch = batch_number
+            job.success_count = success_count
+            job.failed_count = failed_count
+            job.save(update_fields=['processed_rows', 'current_batch', 'success_count', 'failed_count', 'updated_at'])
 
-                    # Persist row-based progress so processed_rows never exceeds total_rows.
-                    if completed_rows % BATCH_SIZE == 0:
-                        job.processed_rows = completed_rows
-                        job.current_batch = (completed_rows + BATCH_SIZE - 1) // BATCH_SIZE
-                        job.success_count = success_count
-                        job.failed_count = failed_count
-                        job.save(update_fields=[
-                            'processed_rows', 'current_batch', 'success_count',
-                            'failed_count', 'updated_at'
-                        ])
-                
-                except Exception as exc:
-                    logger.error(f"Future processing error: {exc}")
-                    failed_count += 1
-        
-        # Bulk update UploadedLeadRow records with results
-        row_updates = []
-        for lead_row_id, lender_results in row_results.items():
-            lead_row = UploadedLeadRow.objects.get(pk=lead_row_id)
-            lead_row.lender_results = lender_results
-            row_errors = []
-            for lender_name, result in lender_results.items():
-                if (result or {}).get('status') == 'SUCCESS':
-                    continue
-                message = (result or {}).get('message') or (result or {}).get('result') or 'Unknown error'
-                row_errors.append(f"{lender_name}: {message}")
+        batch_rows = []
 
-            lead_row.error_message = '; '.join(row_errors)
-            lead_row.processing_status = UploadedLeadRow.STATUS_SUCCESS if any(
-                r.get('status') == 'SUCCESS' for r in lender_results.values()
-            ) else UploadedLeadRow.STATUS_FAILED
-            lead_row.processed_at = datetime.now()
-            row_updates.append(lead_row)
-        
-        # Bulk update
-        if row_updates:
-            UploadedLeadRow.objects.bulk_update(
-                row_updates,
-                ['lender_results', 'error_message', 'processing_status', 'processed_at'],
-                batch_size=BATCH_SIZE
-            )
+        def _process_batch(rows_batch):
+            nonlocal success_count, failed_count, completed_rows, batch_number
+
+            if not rows_batch:
+                return
+
+            with transaction.atomic():
+                UploadedLeadRow.objects.filter(id__in=[row.id for row in rows_batch]).update(
+                    processing_status=UploadedLeadRow.STATUS_PROCESSING
+                )
+
+            batch_updates = []
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                for lead_row, lender_results in executor.map(_process_single_row, rows_batch):
+                    row_errors = []
+                    row_success = False
+
+                    for lender_name, result in lender_results.items():
+                        if (result or {}).get('status') == 'SUCCESS':
+                            success_count += 1
+                            row_success = True
+                        else:
+                            failed_count += 1
+                            message = (result or {}).get('message') or (result or {}).get('result') or 'Unknown error'
+                            row_errors.append(f'{lender_name}: {message}')
+
+                    lead_row.lender_results = lender_results
+                    lead_row.error_message = '; '.join(row_errors)
+                    lead_row.processing_status = UploadedLeadRow.STATUS_SUCCESS if row_success else UploadedLeadRow.STATUS_FAILED
+                    lead_row.processed_at = datetime.now()
+                    batch_updates.append(lead_row)
+                    completed_rows += 1
+
+            with transaction.atomic():
+                if batch_updates:
+                    UploadedLeadRow.objects.bulk_update(
+                        batch_updates,
+                        ['lender_results', 'error_message', 'processing_status', 'processed_at'],
+                        batch_size=BATCH_SIZE
+                    )
+
+                _flush_batch_progress()
+
+        for lead_row in lead_rows.iterator(chunk_size=BATCH_SIZE):
+            batch_rows.append(lead_row)
+            if len(batch_rows) >= BATCH_SIZE:
+                batch_number += 1
+                _process_batch(batch_rows)
+                batch_rows = []
+
+        if batch_rows:
+            batch_number += 1
+            _process_batch(batch_rows)
         
         # Mark job as completed
         job.status = UploadJob.STATUS_COMPLETED
