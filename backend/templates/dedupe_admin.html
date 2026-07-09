@@ -436,7 +436,7 @@
                     <input type="file" id="csvFile" accept=".csv">
                 </div>
                 <div class="hint-text">
-                    CreditSea: phoneNumber and/or pan. TezCredit: mobile or phoneNumber. LendingPlate: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, monthly_income/net_mothlyincome/net_monthly_income/monthly income/income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, profession (optional), ref_id/reference_id/id (optional).
+                    CreditSea: phoneNumber and/or pan. TezCredit: mobile or phoneNumber. LendingPlate: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, monthly_income/net_mothlyincome/net_monthly_income/monthly income/income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, profession (optional), ref_id/reference_id/id (optional). KreditBuddha: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, income/net_mothlyincome/net_monthly_income/monthly_income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, gender, profession (salaried/other), company_name (optional).
                 </div>
                 <div class="error-message" id="fileError">Please select a valid CSV file</div>
             </div>
@@ -456,12 +456,16 @@
                         <input type="checkbox" id="lender3" value="lendingplate">
                         <label for="lender3">LendingPlate</label>
                     </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="lender4" value="kreditbuddha">
+                        <label for="lender4">KreditBuddha</label>
+                    </div>
                 </div>
             </div>
 
             <div class="section" id="lendingplateDetails" style="display: none; border-left: 4px solid #f6ad55; background: #2d3748; padding: 15px; margin-top: 15px;">
                 <div class="section-title">📋 LendingPlate Requirements</div>
-                
+
                 <div style="margin-top: 12px; font-size: 14px;">
                     <div style="margin-bottom: 12px;">
                         <strong>Required CSV Columns:</strong>
@@ -564,6 +568,10 @@
         let dedupePollingInterval = null;
         let pushPollingInterval = null;
 
+        // Lenders that perform dedupe internally on push, so the separate
+        // "Check Duplicates" step must be skipped for them (it would push twice).
+        const PUSH_ONLY_LENDERS = ['lendingplate', 'kreditbuddha'];
+
         const STORAGE_KEYS = {
             dedupeJobId: 'crednorth_dedupe_job_id',
             pushJobId: 'crednorth_push_job_id'
@@ -573,6 +581,7 @@
         const lender1Checkbox = document.getElementById('lender1');
         const lender2Checkbox = document.getElementById('lender2');
         const lender3Checkbox = document.getElementById('lender3');
+        const lender4Checkbox = document.getElementById('lender4');
         const fileError = document.getElementById('fileError');
 
         const dedupeButton = document.getElementById('dedupeButton');
@@ -686,30 +695,31 @@
 
         function checkFormValidity() {
             const hasFile = selectedFile !== null && validateCSVFile(selectedFile);
-            const hasLender = lender1Checkbox.checked || lender2Checkbox.checked || lender3Checkbox.checked;
+            const hasLender = lender1Checkbox.checked || lender2Checkbox.checked || lender3Checkbox.checked || lender4Checkbox.checked;
             dedupeButton.disabled = !(hasFile && hasLender);
 
             const selected = getSelectedLenders();
-            const isLendingPlateOnly = selected.length === 1 && selected[0] === 'lendingplate';
+            const isPushOnly = selected.length > 0 && selected.every((l) => PUSH_ONLY_LENDERS.includes(l));
 
-            if (isLendingPlateOnly) {
+            if (isPushOnly) {
                 dedupeButton.disabled = true;
-                dedupeStatusText.textContent = 'Not required for LendingPlate (internal dedupe).';
+                dedupeStatusText.textContent = 'Not required (internal dedupe for selected lender(s)).';
                 dedupeStatusText.className = 'status-text';
                 pushButton.disabled = !hasFile;
                 pushStatusText.textContent = hasFile
-                    ? 'Ready for direct push to LendingPlate.'
+                    ? 'Ready for direct push.'
                     : 'Upload CSV and select lender';
                 pushStatusText.className = 'status-text';
                 return;
             }
 
-            if (selected.includes('lendingplate') && selected.length > 1) {
+            const hasPushOnly = selected.some((l) => PUSH_ONLY_LENDERS.includes(l));
+            if (hasPushOnly && selected.length > 1) {
                 dedupeButton.disabled = true;
                 pushButton.disabled = true;
-                dedupeStatusText.textContent = 'Run LendingPlate separately from dedupe-based lenders.';
+                dedupeStatusText.textContent = 'Run push-only lenders (LendingPlate/KreditBuddha) separately from dedupe-based lenders.';
                 dedupeStatusText.className = 'status-text error';
-                pushStatusText.textContent = 'Select either only LendingPlate or only dedupe-based lenders.';
+                pushStatusText.textContent = 'Select either only push-only lenders or only dedupe-based lenders.';
                 pushStatusText.className = 'status-text error';
                 return;
             }
@@ -727,6 +737,9 @@
             }
             if (lender3Checkbox.checked) {
                 lenders.push(lender3Checkbox.value);
+            }
+            if (lender4Checkbox.checked) {
+                lenders.push(lender4Checkbox.value);
             }
             return lenders;
         }
@@ -755,7 +768,7 @@
 
                     if (progress.is_done) {
                         clearInterval(pollingInterval);
-                        
+
                         if (progress.status === 'completed') {
                             statusElement.textContent = `Completed: ${progress.success_count} success, ${progress.failed_count} failed`;
                             statusElement.className = 'status-text completed';
@@ -806,7 +819,7 @@
             dedupeStatusText.className = 'status-text';
             pushStatusText.textContent = 'Complete dedupe check first';
             pushStatusText.className = 'status-text';
-            
+
             if (dedupePollingInterval) clearInterval(dedupePollingInterval);
             if (pushPollingInterval) clearInterval(pushPollingInterval);
         });
@@ -842,10 +855,22 @@
             clearSavedJobId('push');
             dedupeDownloadButton.disabled = true;
             pushDownloadButton.disabled = true;
-            
+
             const lendingplateDetails = document.getElementById('lendingplateDetails');
             lendingplateDetails.style.display = lender3Checkbox.checked ? 'block' : 'none';
-            
+
+            checkFormValidity();
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
+        });
+
+        lender4Checkbox.addEventListener('change', () => {
+            dedupeJobId = null;
+            pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
             checkFormValidity();
             if (dedupePollingInterval) clearInterval(dedupePollingInterval);
             if (pushPollingInterval) clearInterval(pushPollingInterval);
@@ -924,12 +949,12 @@
             formData.append('file', selectedFile);
             selectedLenders = getSelectedLenders();
             selectedLenders.forEach((lender) => formData.append('lenders', lender));
-            const isLendingPlateOnly = selectedLenders.length === 1 && selectedLenders[0] === 'lendingplate';
-            formData.append('check_dedupe', isLendingPlateOnly ? 'false' : 'true');
+            const isPushOnly = selectedLenders.length > 0 && selectedLenders.every((l) => PUSH_ONLY_LENDERS.includes(l));
+            formData.append('check_dedupe', isPushOnly ? 'false' : 'true');
             formData.append('send_leads', 'true');
 
-            if (isLendingPlateOnly) {
-                pushStatusText.textContent = 'Queuing LendingPlate push (internal dedupe)...';
+            if (isPushOnly) {
+                pushStatusText.textContent = 'Queuing push (internal dedupe)...';
             }
 
             try {

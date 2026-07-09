@@ -255,6 +255,14 @@ LENDINGPLATE = {
     ),
 }
 
+KREDITBUDDHA = {
+    'BASE_URL': 'https://api.kreditfinpro.com',
+    'AUTH_KEY': os.getenv('KREDITBUDDHA_AUTH_KEY', '27f5fd876f0655955253894f9e89cef96b0d1838'),
+    'USERNAME': os.getenv('KREDITBUDDHA_USERNAME', 'CREDNORTH_Kreditbuddha_20260708173314'),
+    # KreditBuddha whitelists a fixed outbound IP, so calls are routed through this proxy.
+    'PROXY_URL': os.getenv('KREDITBUDDHA_PROXY_URL', 'http://crednorth:crednorth123@3.7.238.227:3128'),
+}
+
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
 # Session engine backed by PostgreSQL.
