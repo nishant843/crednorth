@@ -436,7 +436,7 @@
                     <input type="file" id="csvFile" accept=".csv">
                 </div>
                 <div class="hint-text">
-                    CreditSea: phoneNumber and/or pan. TezCredit: mobile or phoneNumber. LendingPlate: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, monthly_income/net_mothlyincome/net_monthly_income/monthly income/income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, profession (optional), ref_id/reference_id/id (optional). KreditBuddha: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, income/net_mothlyincome/net_monthly_income/monthly_income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, gender, profession (salaried/other), company_name (optional).
+                    CreditSea: phoneNumber and/or pan. TezCredit: mobile or phoneNumber. LendingPlate: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, monthly_income/net_mothlyincome/net_monthly_income/monthly income/income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, profession (optional), ref_id/reference_id/id (optional). KreditBuddha/Brightloans: direct push (internal dedupe), fields: mobile/phoneNumber/phonenumber/phone_number, pincode/pinCode/pin_code, income/net_mothlyincome/net_monthly_income/monthly_income, pan/pan_number/pancard, dob/date_of_birth, first_name+last_name or name, gender, income_type, company_name (optional).
                 </div>
                 <div class="error-message" id="fileError">Please select a valid CSV file</div>
             </div>
@@ -459,6 +459,10 @@
                     <div class="checkbox-item">
                         <input type="checkbox" id="lender4" value="kreditbuddha">
                         <label for="lender4">KreditBuddha</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="lender5" value="brightloans">
+                        <label for="lender5">Brightloans</label>
                     </div>
                 </div>
             </div>
@@ -570,7 +574,7 @@
 
         // Lenders that perform dedupe internally on push, so the separate
         // "Check Duplicates" step must be skipped for them (it would push twice).
-        const PUSH_ONLY_LENDERS = ['lendingplate', 'kreditbuddha'];
+        const PUSH_ONLY_LENDERS = ['lendingplate', 'kreditbuddha', 'brightloans'];
 
         const STORAGE_KEYS = {
             dedupeJobId: 'crednorth_dedupe_job_id',
@@ -582,6 +586,7 @@
         const lender2Checkbox = document.getElementById('lender2');
         const lender3Checkbox = document.getElementById('lender3');
         const lender4Checkbox = document.getElementById('lender4');
+        const lender5Checkbox = document.getElementById('lender5');
         const fileError = document.getElementById('fileError');
 
         const dedupeButton = document.getElementById('dedupeButton');
@@ -695,7 +700,7 @@
 
         function checkFormValidity() {
             const hasFile = selectedFile !== null && validateCSVFile(selectedFile);
-            const hasLender = lender1Checkbox.checked || lender2Checkbox.checked || lender3Checkbox.checked || lender4Checkbox.checked;
+            const hasLender = lender1Checkbox.checked || lender2Checkbox.checked || lender3Checkbox.checked || lender4Checkbox.checked || lender5Checkbox.checked;
             dedupeButton.disabled = !(hasFile && hasLender);
 
             const selected = getSelectedLenders();
@@ -740,6 +745,9 @@
             }
             if (lender4Checkbox.checked) {
                 lenders.push(lender4Checkbox.value);
+            }
+            if (lender5Checkbox.checked) {
+                lenders.push(lender5Checkbox.value);
             }
             return lenders;
         }
@@ -865,6 +873,18 @@
         });
 
         lender4Checkbox.addEventListener('change', () => {
+            dedupeJobId = null;
+            pushJobId = null;
+            clearSavedJobId('dedupe');
+            clearSavedJobId('push');
+            dedupeDownloadButton.disabled = true;
+            pushDownloadButton.disabled = true;
+            checkFormValidity();
+            if (dedupePollingInterval) clearInterval(dedupePollingInterval);
+            if (pushPollingInterval) clearInterval(pushPollingInterval);
+        });
+
+        lender5Checkbox.addEventListener('change', () => {
             dedupeJobId = null;
             pushJobId = null;
             clearSavedJobId('dedupe');

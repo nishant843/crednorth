@@ -10,6 +10,7 @@ from crm_admin.services.tezcredit import check_dedupe as check_tezcredit_dedupe
 from crm_admin.services.tezcredit import push_lead as push_tezcredit_lead
 from crm_admin.services.lendingplate import push_lead as push_lendingplate_lead
 from crm_admin.services.kreditbuddha import push_lead as push_kreditbuddha_lead
+from crm_admin.services.brightloans import push_lead as push_brightloans_lead
 
 
 def process_lender(
@@ -49,7 +50,10 @@ def process_lender(
         
     if lender_lower == "kreditbuddha":
         return _process_kreditbuddha(row_data, check_dedupe, send_leads)
-    
+
+    if lender_lower == "brightloans":
+        return _process_brightloans(row_data, check_dedupe, send_leads)
+
     return {
         "status": "FAILED",
         "result": "UNSUPPORTED_LENDER"
@@ -439,3 +443,110 @@ def _process_kreditbuddha(row_data: dict, check_dedupe: bool, send_leads: bool) 
         "message": error_message
     }
 
+
+def _process_brightloans(row_data: dict, check_dedupe: bool, send_leads: bool) -> dict:
+    """
+    Process Brightloans workflow.
+
+    Brightloans performs dedupe internally, so this flow is push-only.
+    """
+    mobile = (
+        row_data.get('mobile')
+        or row_data.get('phoneNumber')
+        or row_data.get('phonenumber')
+        or row_data.get('phone_number')
+    )
+
+    pincode = (
+        row_data.get('pinCode')
+        or row_data.get('pincode')
+        or row_data.get('pin_code')
+    )
+
+    customer_name = ' '.join(
+        part for part in [
+            str(row_data.get('first_name', '')).strip(),
+            str(row_data.get('last_name', '')).strip(),
+        ] if part
+    ).strip()
+    if not customer_name:
+        customer_name = str(row_data.get('name', '')).strip()
+
+    income_type = _to_int(row_data.get('income_type'))
+    gender = 1 if str(row_data.get('gender', '')).lower() in ['male', 'm'] else 2
+
+    lead_payload = {
+        'full_name': customer_name,
+        'mobile': str(mobile or '').strip(),
+        'email': row_data.get('email') or '',
+        'pancard': row_data.get('pan') or row_data.get('pan_number') or row_data.get('pancard') or '',
+        'pincode': _to_int(pincode),
+        'monthly_salary': _to_int(
+            row_data.get('net_mothlyincome')
+            or row_data.get('net_monthly_income')
+            or row_data.get('monthly_income')
+            or row_data.get('monthly income')
+            or row_data.get('income')
+        ),
+        'income_type': income_type,
+        'dob': row_data.get('dob') or row_data.get('date_of_birth') or '',
+        'gender': gender,
+        'next_salary_date': row_data.get('next_salary_date') or '',
+        'company_name': row_data.get('company_name') or 'Brightloans'
+    }
+
+    push_result = push_brightloans_lead(lead_payload)
+    error_message = str(push_result.get('message', 'Brightloans lead push failed'))
+    is_duplicate_message = 'customer already exist' in error_message.lower()
+
+    if check_dedupe and not send_leads:
+        if push_result.get('success'):
+            return {
+                "status": "SUCCESS",
+                "result": "NOT_DUPLICATE",
+                "message": push_result.get('message', '')
+            }
+
+        if is_duplicate_message:
+            return {
+                "status": "SUCCESS",
+                "result": "DUPLICATE",
+                "message": error_message
+            }
+
+        is_technical_error = any(
+            marker in error_message.lower()
+            for marker in ('timeout', 'http error', 'request error', 'unexpected error', 'invalid json')
+        )
+        return {
+            "status": "FAILED",
+            "result": "API_ERROR" if is_technical_error else "API_REJECTED",
+            "message": error_message
+        }
+
+    if push_result.get('success'):
+        return {
+            "status": "SUCCESS",
+            "result": "LEAD_CREATED",
+            "lead_id": '',
+            "utm_link": (push_result.get('data') or {}).get('apply_url') or '',
+            "message": push_result.get('message', '')
+        }
+
+    if is_duplicate_message:
+        return {
+            "status": "SUCCESS",
+            "result": "DUPLICATE",
+            "message": error_message
+        }
+
+    is_technical_error = any(
+        marker in error_message.lower()
+        for marker in ('timeout', 'http error', 'request error', 'unexpected error', 'invalid json')
+    )
+
+    return {
+        "status": "FAILED",
+        "result": "API_ERROR" if is_technical_error else "API_REJECTED",
+        "message": error_message
+    }
