@@ -263,6 +263,14 @@ KREDITBUDDHA = {
     'PROXY_URL': os.getenv('KREDITBUDDHA_PROXY_URL', 'http://crednorth:crednorth123@3.7.238.227:3128'),
 }
 
+BRIGHTLOANS = {
+    'BASE_URL': 'https://api.blsfintech.com',
+    'AUTH_KEY': os.getenv('BRIGHTLOANS_AUTH_KEY', '1088dbbbd028eb3f24329aeab2b8b785cdef64d5'),
+    'USERNAME': os.getenv('BRIGHTLOANS_USERNAME', 'CREDNORTH_BrightLoans_20260710110635'),
+    # Brightloans whitelists a fixed outbound IP, so calls are routed through this proxy.
+    'PROXY_URL': os.getenv('BRIGHTLOANS_PROXY_URL', 'http://crednorth:crednorth123@3.7.238.227:3128'),
+}
+
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
 # Session engine backed by PostgreSQL.
