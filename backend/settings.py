@@ -271,6 +271,14 @@ BRIGHTLOANS = {
     'PROXY_URL': os.getenv('BRIGHTLOANS_PROXY_URL', 'http://crednorth:crednorth123@3.7.238.227:3128'),
 }
 
+# Mpokket integration configuration (separate dedupe-check and lead-push APIs).
+MPOKKET = {
+    'BASE_URL': 'https://api.mpkt.in',
+    'API_KEY': os.getenv('MPOKKET_API_KEY', '5AE6708068774DC68937167A059D3'),
+    # Mpokket whitelists a fixed outbound IP, so calls are routed through this proxy.
+    'PROXY_URL': os.getenv('MPOKKET_PROXY_URL', 'http://crednorth:crednorth123@3.7.238.227:3128'),
+}
+
 # ========== PRODUCTION OPTIMIZATIONS FOR 1M+ USERS ==========
 
 # Session engine backed by PostgreSQL.

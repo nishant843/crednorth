@@ -11,6 +11,9 @@ from crm_admin.services.tezcredit import push_lead as push_tezcredit_lead
 from crm_admin.services.lendingplate import push_lead as push_lendingplate_lead
 from crm_admin.services.kreditbuddha import push_lead as push_kreditbuddha_lead
 from crm_admin.services.brightloans import push_lead as push_brightloans_lead
+from crm_admin.services.mpokket import check_dedupe as check_mpokket_dedupe
+from crm_admin.services.mpokket import push_lead as push_mpokket_lead
+from crm_admin.services.mpokket import _to_ddmmyyyy as _mpokket_to_ddmmyyyy
 
 
 def process_lender(
@@ -53,6 +56,9 @@ def process_lender(
 
     if lender_lower == "brightloans":
         return _process_brightloans(row_data, check_dedupe, send_leads)
+
+    if lender_lower == "mpokket":
+        return _process_mpokket(row_data, check_dedupe, send_leads)
 
     return {
         "status": "FAILED",
@@ -549,4 +555,150 @@ def _process_brightloans(row_data: dict, check_dedupe: bool, send_leads: bool) -
         "status": "FAILED",
         "result": "API_ERROR" if is_technical_error else "API_REJECTED",
         "message": error_message
+    }
+
+
+_MPOKKET_ADDITIONAL_INFO_FIELDS = [
+    'loan_amount', 'loan_tenure', 'company_type', 'industry_type', 'company_name',
+    'current_designation', 'company_address', 'company_pincode', 'company_city',
+    'company_state', 'current_company_working_years', 'net_monthly_income',
+    'salary_mode', 'bank_name', 'pancard', 'enter_fname_as_per_pancard',
+    'enter_lname_as_per_pancard', 'current_address', 'current_pincode',
+    'current_city', 'current_state', 'current_residence_type',
+    'years_stayed_in_current_address', 'education_qualification', 'marital_status',
+    'father_name', 'mother_name', 'current_total_emi_paid_per_month',
+    'active_creditcard_holder', 'offical_email_id', 'college_name',
+    'college_pincode', 'college_city', 'college_state', 'college_strength',
+    'degree_type', 'degree_name', 'degree_specialisation',
+    'degree_attendance_type', 'degree_start_date', 'degree_end_date',
+]
+
+
+def _normalize_mpokket_profession(raw):
+    """Map free-text profession values to Mpokket's exact enum."""
+    normalized = str(raw or '').strip().lower()
+    if normalized == 'student':
+        return 'Student'
+    if normalized in ('salaried', 'sal', 'salary'):
+        return 'Salaried'
+    if normalized in ('prime sib', 'sib', 'self employed', 'self-employed', 'selfemployed'):
+        return 'Prime SIB'
+    return None
+
+
+def _mpokket_dedupe_result(outcome_data: dict) -> dict:
+    outcome = outcome_data['outcome']
+    if outcome == 'NEW':
+        return {"status": "SUCCESS", "result": "NOT_DUPLICATE"}
+    if outcome == 'ELIGIBLE':
+        return {
+            "status": "SUCCESS",
+            "result": "DUPLICATE_ELIGIBLE",
+            "message": f"Existing lead, eligible (borrow_limit={outcome_data.get('borrow_limit')})"
+        }
+    if outcome == 'NOT_ELIGIBLE':
+        return {"status": "SUCCESS", "result": "DUPLICATE_NOT_ELIGIBLE"}
+    return {"status": "SUCCESS", "result": "DUPLICATE_REJECTED"}
+
+
+def _process_mpokket(row_data: dict, check_dedupe: bool, send_leads: bool) -> dict:
+    """
+    Process Mpokket workflow.
+
+    Mpokket exposes separate dedupe-check and lead-push APIs (unlike the
+    internal-dedupe lenders), so this mirrors TezCredit's three-way branch.
+    """
+    mobile = (
+        row_data.get('mobile')
+        or row_data.get('phoneNumber')
+        or row_data.get('phonenumber')
+        or row_data.get('phone_number')
+    )
+    email = row_data.get('email') or row_data.get('email_id') or ''
+
+    if mobile is None or str(mobile).strip() == '':
+        return {
+            "status": "FAILED",
+            "result": "VALIDATION_ERROR",
+            "message": "Missing field: mobile"
+        }
+
+    profession = _normalize_mpokket_profession(row_data.get('profession'))
+    if profession is None:
+        return {
+            "status": "FAILED",
+            "result": "VALIDATION_ERROR",
+            "message": "Missing or unrecognized field: profession (expected Student/Salaried/Prime SIB)"
+        }
+
+    first_name = str(row_data.get('first_name', '')).strip()
+    last_name = str(row_data.get('last_name', '')).strip()
+    full_name = ' '.join(part for part in [first_name, last_name] if part).strip()
+    if not full_name:
+        full_name = str(row_data.get('name', '')).strip()
+
+    additional_info = {
+        field: str(row_data.get(field, '') or '').strip()
+        for field in _MPOKKET_ADDITIONAL_INFO_FIELDS
+    }
+
+    lead_payload = {
+        'email_id': str(email).strip(),
+        'mobile_no': str(mobile).strip(),
+        'full_name': full_name,
+        'first_name': first_name,
+        'last_name': last_name,
+        'date_of_birth': _mpokket_to_ddmmyyyy(row_data.get('dob') or row_data.get('date_of_birth')),
+        'gender': str(row_data.get('gender', '') or '').strip(),
+        'profession': profession,
+        'additional_info': additional_info,
+    }
+
+    def _do_push():
+        push_result = push_mpokket_lead(lead_payload)
+        if push_result.get('success'):
+            return {
+                "status": "SUCCESS",
+                "result": "LEAD_CREATED",
+                "lead_id": str((push_result.get('data') or {}).get('request_id', '')),
+                "message": push_result.get('message', '')
+            }
+        return {
+            "status": "FAILED",
+            "result": "API_REJECTED",
+            "message": push_result.get('message', 'Mpokket lead push failed')
+        }
+
+    if check_dedupe and not send_leads:
+        try:
+            outcome_data = check_mpokket_dedupe(email, mobile)
+        except Exception as exc:
+            return {
+                "status": "FAILED",
+                "result": "API_ERROR",
+                "message": str(exc)
+            }
+        return _mpokket_dedupe_result(outcome_data)
+
+    if not check_dedupe and send_leads:
+        return _do_push()
+
+    if check_dedupe and send_leads:
+        try:
+            outcome_data = check_mpokket_dedupe(email, mobile)
+        except Exception as exc:
+            return {
+                "status": "FAILED",
+                "result": "API_ERROR",
+                "message": str(exc)
+            }
+
+        if outcome_data['outcome'] != 'NEW':
+            return _mpokket_dedupe_result(outcome_data)
+
+        return _do_push()
+
+    return {
+        "status": "FAILED",
+        "result": "NO_ACTION_SELECTED"
     }
